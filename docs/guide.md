@@ -229,7 +229,7 @@ Tips:
 4. **Errors.** If code inside `bt.trace(...)` raises, the exception is recorded on the span, the trace is still sealed, and the exception propagates to your code as usual.
 5. **Nothing is lost on a crash.** Spans are written to a local spool before sending and deleted only after the server confirms them. If your process dies or the server is down, the next `Benchtrace` client for the same URL sends them.
 6. **Receipts.** A trace shows `closed` once every span it declared has arrived, or `incomplete` if some are missing.
-7. **Existing instrumentation.** The SDK attaches to the global OpenTelemetry tracer provider, so spans from OpenInference or GenAI instrumentations (OpenAI, Anthropic, LangChain and others) that you enable in the same process are sent along.
+7. **Existing instrumentation.** The SDK attaches to the global OpenTelemetry tracer provider, so spans from OpenInference or GenAI instrumentations (OpenAI, Anthropic, LangChain and others) that you enable in the same process are sent along. The next section shows this with two agent frameworks.
 
 A complete offline version with a tool call and an error case is in [`examples/sdk_trace_agent.py`](../examples/sdk_trace_agent.py):
 
@@ -255,6 +255,79 @@ trace 8a3e011747956baddcc0697ee2ceaca7 · sdk
     ├── model call-model 0ms 25→12 tok
     └── tool calculator 2ms error
 ```
+
+### Agent frameworks: OpenAI Agents SDK and LangChain
+
+If your agent is built on a framework, you don't need to write spans by hand. Turn on the framework's [OpenInference](https://github.com/Arize-ai/openinference) instrumentation with the benchtrace provider, and wrap each task in `bt.trace(...)`. Every agent step, model call and tool call becomes a span, with model names, token counts and (if the content policy allows) prompts and outputs.
+
+With the [OpenAI Agents SDK](https://openai.github.io/openai-agents-python/):
+
+```python
+from agents import Agent, Runner, function_tool
+from openinference.instrumentation.openai_agents import OpenAIAgentsInstrumentor
+from benchtrace.sdk import Benchtrace
+
+bt = Benchtrace("http://127.0.0.1:8321", content="full")
+OpenAIAgentsInstrumentor().instrument(tracer_provider=bt.provider)
+
+@function_tool
+def lookup_order(order_id: str) -> str:
+    """Look up the status of an order by its id."""
+    return ORDERS.get(order_id, "no order with that id")
+
+agent = Agent(name="support-agent", instructions="...", model="gpt-4o-mini", tools=[lookup_order])
+with bt.trace("support-ticket", task_id="t-1"):
+    result = await Runner.run(agent, "Where is my order A-100?")
+```
+
+With [LangChain](https://docs.langchain.com/) agents, which run on LangGraph (the same instrumentation also traces graphs you build with LangGraph directly):
+
+```python
+from langchain.agents import create_agent
+from openinference.instrumentation.langchain import LangChainInstrumentor
+from benchtrace.sdk import Benchtrace
+
+bt = Benchtrace("http://127.0.0.1:8321", content="full")
+LangChainInstrumentor().instrument(tracer_provider=bt.provider)
+
+agent = create_agent("openai:gpt-4o-mini", tools=[lookup_order], system_prompt="...")
+with bt.trace("support-ticket", task_id="t-1"):
+    result = agent.invoke({"messages": [{"role": "user", "content": "Where is my order A-100?"}]})
+```
+
+The full scripts are [`examples/openai_agents_trace.py`](../examples/openai_agents_trace.py) and [`examples/langchain_agent_trace.py`](../examples/langchain_agent_trace.py). They need an `OPENAI_API_KEY`. The frameworks aren't benchtrace dependencies, so `uv run --with` installs them just for the run:
+
+```bash
+uv run --with openai-agents --with openinference-instrumentation-openai-agents python examples/openai_agents_trace.py
+uv run --with langchain --with langchain-openai --with openinference-instrumentation-langchain python examples/langchain_agent_trace.py
+```
+
+The span trees for one ticket look like this. Token counts here are from a test run against a stand-in API, so yours will differ:
+
+```text
+trace 73ea18977317f986efbf66a6f5bab19e · sdk          (OpenAI Agents SDK)
+└── agent support-ticket 752ms
+    └── agent Agent workflow 750ms
+        └── span Agent workflow 750ms
+            └── agent support-agent 749ms
+                ├── span turn 735ms
+                │   ├── model response 665ms 50→12 tok
+                │   └── tool lookup_order 2ms
+                └── span turn 13ms
+                    └── model response 9ms 50→12 tok
+
+trace 0c9853dc9ff4e98d4a6dfdc22ac9a5b9 · sdk          (LangChain)
+└── agent support-ticket 46ms
+    └── span LangGraph 41ms
+        ├── span model 28ms
+        │   └── model ChatOpenAI 24ms 50→12 tok
+        ├── span tools 3ms
+        │   └── tool lookup_order 1ms
+        └── span model 6ms
+            └── model ChatOpenAI 5ms 50→12 tok
+```
+
+Two details are worth knowing. Passing `tracer_provider=bt.provider` makes it explicit which provider the instrumentation reports to, which matters when your app already configures OpenTelemetry itself. And the Agents SDK instrumentation by default replaces the SDK's own export to the OpenAI traces dashboard; pass `exclusive_processor=False` to `instrument()` to keep both.
 
 ## 7. Sending traces from other languages
 
