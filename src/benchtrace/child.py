@@ -141,6 +141,8 @@ def run_child(run_id: str) -> int:
         model, limit, epochs, budget = run.model, run.limit, run.epochs, run.budget_usd
 
     STATE.run_id, STATE.model, STATE.budget = run_id, model, budget
+    if entry.adapter == "harbor":
+        return _run_harbor_child(run_id, entry, model, limit, epochs, budget, cfg.logs_dir / run_id)
     log_dir = cfg.logs_dir / run_id
     status, error = "failed", None
     log: EvalLog | None = None
@@ -190,6 +192,44 @@ def run_child(run_id: str) -> int:
             status = "cancelled"
         run.status = status
         run.finished_at = now()
+        if error:
+            run.error = error
+    return 0 if status == "succeeded" else 1
+
+
+def _run_harbor_child(run_id, entry, model, limit, epochs, budget, run_dir) -> int:
+    from benchtrace.harbor_adapter import run_harbor, split_model
+
+    checksums: dict[str, str] = {}
+
+    def ingest(converted: dict[str, Any]) -> None:
+        if converted.get("task_checksum"):
+            checksums[converted["result"]["sample_id"]] = converted["task_checksum"]
+        with session_scope() as session:
+            store_sample(session, session.get(Run, run_id), converted)
+
+    def record_cost(spent: float) -> None:
+        with session_scope() as session:
+            run = session.get(Run, run_id)
+            if spent:
+                run.cost_usd = spent
+
+    agent = None
+    try:
+        agent, agent_model = split_model(model, entry.agent)
+        status, error = run_harbor(
+            run_id, entry.task, agent, agent_model, limit, epochs, budget, run_dir, ingest, record_cost
+        )
+    except Exception as ex:  # noqa: BLE001 - record any failure on the run
+        status, error = "failed", f"{type(ex).__name__}: {ex}"
+    with session_scope() as session:
+        run = session.get(Run, run_id)
+        if run.status == "cancelling":
+            status = "cancelled"
+        run.status = status
+        run.finished_at = now()
+        run.log_path = str(run_dir / "harbor-jobs")
+        run.manifest = {**(run.manifest or {}), "harbor": {"agent": agent, "task_checksums": checksums}}
         if error:
             run.error = error
     return 0 if status == "succeeded" else 1

@@ -33,6 +33,7 @@ class BenchmarkEntry(BaseModel):
     requires: list[str] = Field(default_factory=lambda: ["chat"])
     sandbox: str | None = None
     offline: bool = False
+    agent: str | None = None  # default Harbor agent
     description: str | None = None
     notes: str | None = None
 

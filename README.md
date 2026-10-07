@@ -39,6 +39,18 @@ Model names follow [Inspect's provider format](https://inspect.aisi.org.uk/model
 
 Commands that call paid models ask for confirmation, or take `--yes`.
 
+## Agent benchmarks with Harbor
+
+Agent benchmarks (Terminal-Bench, SWE-bench Verified, Aider Polyglot) run through [Harbor](https://github.com/laude-institute/harbor) in Docker sandboxes. Each trial becomes a sample with its reward, tokens, cost and an ATIF trajectory converted into model and tool spans.
+
+```bash
+uv sync --extra harbor
+uv run benchtrace run harbor-smoke -m oracle -m nop                 # bundled tasks, no API keys
+uv run benchtrace run terminal-bench -m terminus-2:openai/gpt-4o --limit 10 --yes
+```
+
+Models take the form `agent:model`, or a bare model for the catalog's default agent. `oracle` (the reference solution) and `nop` (does nothing) are free. Harbor resolves registry datasets to their latest version. Every trial's task checksum is recorded, and runs whose task contents differ are blocked from direct comparison. With `--budget`, a run stops when Harbor-reported cost reaches the cap. Agent benchmarks pull large images; SWE-bench needs substantial disk space.
+
 ## Web UI and server
 
 ```bash
@@ -118,7 +130,7 @@ State lives in `~/.benchtrace` (override with `BENCHTRACE_HOME`): a SQLite datab
 
 ## Status
 
-Early. The CLI, API server, job queue, web UI, trace diff, OTLP ingest, SDK, imports and dataset drafts work. In progress: workspaces and authentication, and a Harbor adapter for agent benchmarks.
+Early. The CLI, API server, job queue, web UI, trace diff, OTLP ingest, SDK, imports and dataset drafts work. In progress: workspaces and authentication.
 
 ## Development
 

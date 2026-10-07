@@ -86,6 +86,14 @@ def check_compatibility(a: Run, b: Run, a_keys: set, b_keys: set) -> Compatibili
             f"Benchmark package versions differ (inspect_evals {pkg_a} vs {pkg_b}); "
             "prompts or graders may have changed."
         )
+    sums_a = ((a.manifest or {}).get("harbor") or {}).get("task_checksums") or {}
+    sums_b = ((b.manifest or {}).get("harbor") or {}).get("task_checksums") or {}
+    changed = sorted(t for t in set(sums_a) & set(sums_b) if sums_a[t] != sums_b[t])
+    if changed:
+        c.blocking.append(
+            f"Task contents changed between runs for {len(changed)} task(s), e.g. {changed[0]}; "
+            "the Harbor dataset version differs."
+        )
     if a.epochs != b.epochs:
         c.warnings.append(f"Different epochs ({a.epochs} vs {b.epochs}); only shared epochs are paired.")
     only_a, only_b = len(a_keys - b_keys), len(b_keys - a_keys)

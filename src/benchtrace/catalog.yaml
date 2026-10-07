@@ -250,3 +250,63 @@
   dataset: google-research-datasets/mbpp
   requires: [chat]
   sandbox: docker
+
+# Agent benchmarks run with Harbor (uv sync --extra harbor). Each task runs in a
+# Docker sandbox. Model syntax: agent:model (e.g. terminus-2:openai/gpt-4o),
+# a bare model for the default agent, or oracle / nop. Harbor resolves the
+# dataset's latest version; each trial's task checksum is recorded and compared.
+
+- id: harbor-smoke
+  version: 1
+  family: Harbor smoke tasks
+  variant: 2 bundled shell tasks, verified by test scripts
+  adapter: harbor
+  task: bundled:harbor_tasks
+  agent: oracle
+  grader: task test script (reward 0 or 1)
+  task_count: 2
+  license: Apache-2.0
+  offline: true
+  requires: [agent]
+  sandbox: docker
+  description: Bundled Harbor tasks. Run with model oracle (reference solution) or nop to test the pipeline.
+
+- id: terminal-bench
+  version: 2
+  family: Terminal-Bench
+  variant: Terminal-Bench 2.1 (Harbor registry terminal-bench/terminal-bench-2-1)
+  adapter: harbor
+  task: terminal-bench/terminal-bench-2-1
+  agent: terminus-2
+  grader: task test scripts in sandbox
+  task_count: 89
+  license: Apache-2.0
+  requires: [agent, tools]
+  sandbox: docker
+
+- id: swe-bench-verified
+  version: 1
+  family: SWE-bench
+  variant: Verified, 500 tasks (Harbor registry swe-bench/swe-bench-verified)
+  adapter: harbor
+  task: swe-bench/swe-bench-verified
+  agent: mini-swe-agent
+  grader: repository unit tests in sandbox
+  task_count: 500
+  license: MIT
+  requires: [agent, tools]
+  sandbox: docker
+  notes: Large Docker images per task; plan disk space accordingly.
+
+- id: aider-polyglot
+  version: 1
+  family: Aider Polyglot
+  variant: 225 Exercism exercises in six languages (Harbor registry aider/aider-polyglot)
+  adapter: harbor
+  task: aider/aider-polyglot
+  agent: terminus-2
+  grader: exercise unit tests in sandbox
+  task_count: 225
+  license: MIT
+  requires: [agent, tools]
+  sandbox: docker

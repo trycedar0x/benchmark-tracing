@@ -20,8 +20,11 @@ class PlanError(ValueError):
     pass
 
 
+FREE_MODELS = {"oracle", "nop"}  # Harbor reference-solution and no-op agents
+
+
 def is_paid(model: str) -> bool:
-    return not model.startswith(MOCK_PREFIX)
+    return not model.startswith(MOCK_PREFIX) and model not in FREE_MODELS
 
 
 def planned_samples(entry: BenchmarkEntry, limit: int | None, epochs: int) -> int | None:
