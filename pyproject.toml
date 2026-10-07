@@ -1,0 +1,49 @@
+[project]
+name = "benchtrace"
+version = "0.1.0"
+description = "Open-source benchmark evaluation with traces: catalog, quote, run, compare."
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.12"
+dependencies = [
+    "inspect-ai>=0.3.277",
+    "numpy>=2.5.3",
+    "pydantic>=2.13.5",
+    "pyyaml>=6.0.3",
+    "rich>=15.0.0",
+    "scipy>=1.18.1",
+    "sqlalchemy>=2.1.3",
+    "typer>=0.27.3",
+]
+
+[project.scripts]
+benchtrace = "benchtrace.cli:app"
+
+[project.entry-points.inspect_ai]
+benchtrace = "benchtrace._registry"
+
+[project.optional-dependencies]
+benchmarks = [
+    "inspect-evals>=0.23.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.7,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.16.10",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["B008"]

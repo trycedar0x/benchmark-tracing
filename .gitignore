@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+
+# Local state and scratch
+.scratch/
+.benchtrace/
+*.db
+*.eval
+
+# Frontend
+node_modules/
+web/dist/
+
+# Private research notes (kept local)
+docs/evalrouter-findings.md
+docs/build-proposal.md
+docs/build-proposal-v2.md
+docs/architecture-overview.html
+
+.DS_Store
+.env

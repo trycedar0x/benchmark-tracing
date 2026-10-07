@@ -1,0 +1,20 @@
+# Model prices in USD per million tokens, used for quotes, cost estimates and
+# budget caps. Benchtrace does not ship real provider prices because they change;
+# add the models you use to $BENCHTRACE_HOME/pricing.yaml (default ~/.benchtrace),
+# which overrides entries here. Example:
+#
+#   openai/gpt-4o-mini:
+#     input: 0.15
+#     output: 0.60
+#     as_of: 2026-10-01
+#     source: https://openai.com/api/pricing
+#
+# Models without a price get token counts but no cost, and cannot run with a
+# budget cap.
+
+# Mock models: fictional prices so offline demos exercise quotes and caps.
+btmock/perfect: {input: 3.0, output: 15.0, as_of: 2026-10-07, source: fictional}
+btmock/strong: {input: 2.0, output: 8.0, as_of: 2026-10-07, source: fictional}
+btmock/weak: {input: 0.2, output: 0.8, as_of: 2026-10-07, source: fictional}
+btmock/flaky: {input: 1.0, output: 4.0, as_of: 2026-10-07, source: fictional}
+btmock/drifty: {input: 2.0, output: 8.0, as_of: 2026-10-07, source: fictional}
