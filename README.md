@@ -39,6 +39,17 @@ Model names follow [Inspect's provider format](https://inspect.aisi.org.uk/model
 
 Commands that call paid models ask for confirmation, or take `--yes`.
 
+## Web UI and server
+
+```bash
+npm --prefix web ci && npm --prefix web run build   # builds the UI into the Python package
+uv run benchtrace serve                              # http://127.0.0.1:8321, with 2 embedded workers
+```
+
+Or run everything with Postgres in Docker: `docker compose up --build`. The API, a worker and Postgres start, and the UI is at http://127.0.0.1:8321. Over the API, paid models need an approved quote (`BENCHTRACE_REQUIRE_QUOTE=0` disables this).
+
+The UI is built with [shadcn/ui](https://ui.shadcn.com) (Nova preset). Browser smoke tests: `npx --prefix web playwright test` against a running server.
+
 ## Commands
 
 | Command | What it does |
@@ -52,6 +63,7 @@ Commands that call paid models ask for confirmation, or take `--yes`.
 | `trace RUN SAMPLE` | Print the span tree for one task |
 | `compare A B` | Paired comparison; `--json` for every row |
 | `cancel RUN` | Stop a running run gracefully |
+| `serve`, `worker` | Start the API and web UI; run queued jobs in a separate process |
 | `export RUN` | JSON export, or `--format eee` for [Every Eval Ever](https://github.com/evaleval/every_eval_ever) (needs `--extra eee`; real providers only) |
 
 ## How it works
@@ -66,7 +78,7 @@ State lives in `~/.benchtrace` (override with `BENCHTRACE_HOME`): a SQLite datab
 
 ## Status
 
-Early. The CLI core loop works. In progress: a self-hostable server with a web UI, OTLP ingest and a Python SDK for your own agents, imports from Langfuse, LangSmith and Braintrust, and trace diffs.
+Early. The CLI, API server, job queue and web UI work. In progress: OTLP ingest and a Python SDK for your own agents, imports from Langfuse, LangSmith and Braintrust, and trace diffs.
 
 ## Development
 

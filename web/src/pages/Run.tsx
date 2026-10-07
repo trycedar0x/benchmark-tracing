@@ -1,17 +1,28 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { ChevronDown, Square } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import { Stat } from '@/components/stat'
+import { StatusBadge } from '@/components/status-badge'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { Progress } from '@/components/ui/progress'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { errorMessage, money, num, pct } from '@/lib/format'
 import { api, TERMINAL } from '../api'
-import { Badge, Button, Card, ErrorNote, Progress, Stat, money, num, pct, td, th } from '../ui'
 
 const OUTCOMES = ['correct', 'incorrect', 'partial', 'error', 'unscored', 'cancelled']
+const PAGE_SIZE = 50
 
 export default function RunPage() {
   const { runId = '' } = useParams()
   const qc = useQueryClient()
-  const [outcome, setOutcome] = useState('')
+  const [outcome, setOutcome] = useState('all')
   const [page, setPage] = useState(0)
-  const pageSize = 50
 
   const run = useQuery({
     queryKey: ['run', runId],
@@ -22,7 +33,11 @@ export default function RunPage() {
   const samples = useQuery({
     queryKey: ['samples', runId, outcome, page],
     queryFn: () =>
-      api.samples(runId, { offset: String(page * pageSize), limit: String(pageSize), ...(outcome ? { outcome } : {}) }),
+      api.samples(runId, {
+        offset: String(page * PAGE_SIZE),
+        limit: String(PAGE_SIZE),
+        ...(outcome !== 'all' ? { outcome } : {}),
+      }),
     refetchInterval: live ? 2000 : false,
   })
   const cancel = useMutation({
@@ -30,136 +45,184 @@ export default function RunPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['run', runId] }),
   })
 
-  if (run.error) return <ErrorNote error={run.error} />
+  if (run.error)
+    return (
+      <Alert variant="destructive">
+        <AlertDescription>{errorMessage(run.error)}</AlertDescription>
+      </Alert>
+    )
   const r = run.data
-  if (!r) return <div className="text-muted">Loading…</div>
+  if (!r) return <Skeleton className="h-64 w-full" />
   const versions = (r.manifest?.versions ?? {}) as Record<string, string>
+  const total = samples.data?.total ?? 0
 
   return (
     <div className="grid gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="font-mono text-xs text-muted">{r.id}</div>
-          <h1 className="flex flex-wrap items-center gap-2 text-xl font-semibold">
-            {r.benchmark} <span className="text-muted">·</span> <span className="font-mono text-base">{r.model}</span>
-            <Badge value={r.status} />
+          <p className="font-mono text-xs text-muted-foreground">{r.id}</p>
+          <h1 className="flex flex-wrap items-center gap-2 text-2xl font-semibold tracking-tight">
+            {r.benchmark} <span className="font-mono text-lg font-normal text-muted-foreground">{r.model}</span>
+            <StatusBadge value={r.status} />
           </h1>
         </div>
         {live && (
-          <Button kind="danger" disabled={cancel.isPending || r.status === 'cancelling'} onClick={() => cancel.mutate()}>
-            Cancel run
+          <Button
+            variant="destructive"
+            disabled={cancel.isPending || r.status === 'cancelling'}
+            onClick={() => cancel.mutate()}
+          >
+            <Square /> Cancel run
           </Button>
         )}
       </div>
       {r.error && r.status !== 'succeeded' && (
-        <pre className="overflow-x-auto rounded border border-warn/40 bg-warn-bg p-3 text-xs whitespace-pre-wrap text-warn">{r.error}</pre>
+        <Alert variant={r.status === 'failed' ? 'destructive' : 'default'}>
+          <AlertTitle>{r.status === 'budget_exceeded' ? 'Stopped at budget cap' : 'Run did not finish'}</AlertTitle>
+          <AlertDescription>
+            <pre className="whitespace-pre-wrap font-mono text-xs">{r.error}</pre>
+          </AlertDescription>
+        </Alert>
       )}
       <Card>
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+        <CardContent className="grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-6">
           <Stat label="Accuracy" value={pct(r.accuracy)} sub={`${r.n_correct} correct`} />
-          <Stat label="Progress" value={<Progress done={r.samples_done} total={r.samples_total} />} />
+          <Stat
+            label="Progress"
+            value={`${r.samples_done}/${r.samples_total ?? '?'}`}
+            sub={<Progress value={r.samples_total ? (100 * r.samples_done) / r.samples_total : 0} className="mt-1" />}
+          />
           <Stat label="Errors" value={r.n_error} sub="excluded from accuracy" />
-          <Stat label="Tokens" value={num(r.input_tokens + r.output_tokens)} sub={`${num(r.input_tokens)} in / ${num(r.output_tokens)} out`} />
+          <Stat
+            label="Tokens"
+            value={num(r.input_tokens + r.output_tokens)}
+            sub={`${num(r.input_tokens)} in / ${num(r.output_tokens)} out`}
+          />
           <Stat label="Est. cost" value={money(r.cost_usd)} sub={r.budget_usd ? `cap ${money(r.budget_usd)}` : 'no cap'} />
-          <Stat label="Resolved model" value={<span className="font-mono text-sm">{r.resolved_models.join(', ') || '–'}</span>} sub={r.resolved_models.length > 1 ? 'more than one revision' : undefined} />
-        </div>
+          <Stat
+            label="Resolved model"
+            value={<span className="font-mono text-sm">{r.resolved_models.join(', ') || '–'}</span>}
+            sub={r.resolved_models.length > 1 ? 'more than one revision' : undefined}
+          />
+        </CardContent>
       </Card>
-      <details className="rounded-md border border-line bg-surface px-4 py-2.5 text-[13px]">
-        <summary className="cursor-pointer font-semibold">Manifest</summary>
-        <dl className="mt-3 grid grid-cols-[max-content_minmax(0,1fr)] gap-x-4 gap-y-1">
-          <dt className="text-muted">Variant</dt>
-          <dd className="font-mono">{r.variant_key}</dd>
-          <dt className="text-muted">Content policy</dt>
-          <dd>{r.content_policy}</dd>
-          <dt className="text-muted">Limit / epochs</dt>
-          <dd>
-            {r.limit ?? 'all'} / {r.epochs}
-          </dd>
-          <dt className="text-muted">Versions</dt>
-          <dd>{Object.entries(versions).map(([k, v]) => `${k} ${v}`).join(', ') || '–'}</dd>
-          <dt className="text-muted">Metrics</dt>
-          <dd className="font-mono break-all">{JSON.stringify(r.metrics)}</dd>
-          <dt className="text-muted">Inspect log</dt>
-          <dd className="font-mono break-all">{r.log_path ?? '–'}</dd>
-        </dl>
-      </details>
-      <Card
-        title={`Samples (${samples.data?.total ?? '…'})`}
-        actions={
-          <div className="flex flex-wrap gap-1">
-            {['', ...OUTCOMES].map((o) => {
-              const count = o ? (r.outcomes?.[o] ?? 0) : r.samples_done
-              if (o && !count) return null
-              return (
-                <button
-                  key={o || 'all'}
-                  onClick={() => {
-                    setOutcome(o)
-                    setPage(0)
-                  }}
-                  className={`rounded px-2 py-0.5 text-xs ${outcome === o ? 'bg-accent text-accent-fg' : 'bg-sunken text-muted hover:text-fg'}`}
-                >
-                  {o || 'all'} {count}
-                </button>
-              )
-            })}
-          </div>
-        }
-      >
-        <div className="-m-4 overflow-x-auto">
-          <table className="w-full min-w-[760px] text-[13px]">
-            <thead className="border-b border-line">
-              <tr>
-                <th className={th}>Sample</th>
-                <th className={th}>Outcome</th>
-                <th className={th}>Answer</th>
-                <th className={th}>Target</th>
-                <th className={`${th} text-right`}>Tokens</th>
-                <th className={th}>Trace</th>
-              </tr>
-            </thead>
-            <tbody>
-              {samples.data?.items.map((s) => (
-                <tr key={`${s.sample_id}-${s.epoch}`} className="border-b border-line last:border-0 hover:bg-sunken">
-                  <td className={`${td} font-mono text-xs`}>
-                    {s.sample_id}
-                    {r.epochs > 1 && <span className="text-muted"> #{s.epoch}</span>}
-                  </td>
-                  <td className={td}>
-                    <Badge value={s.outcome} />
-                  </td>
-                  <td className={`${td} max-w-[28ch] truncate`} title={s.answer ?? s.error ?? ''}>
-                    {s.answer ?? s.error ?? (r.content_policy === 'metadata' ? <span className="text-muted">withheld</span> : '–')}
-                  </td>
-                  <td className={`${td} max-w-[20ch] truncate`} title={s.target ?? ''}>
-                    {s.target ?? '–'}
-                  </td>
-                  <td className={`${td} tabular text-right`}>{num(s.input_tokens + s.output_tokens)}</td>
-                  <td className={td}>
-                    {s.trace_id && (
-                      <Link className="text-accent hover:underline" to={`/traces/${s.trace_id}`}>
-                        view
-                      </Link>
-                    )}
-                  </td>
-                </tr>
+      <Collapsible>
+        <Card className="gap-0 py-0">
+          <CollapsibleTrigger asChild>
+            <Button variant="ghost" className="w-full justify-between rounded-xl px-6 py-4">
+              Manifest <ChevronDown />
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <CardContent className="pb-6">
+              <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-4 gap-y-1 text-sm">
+                <dt className="text-muted-foreground">Variant</dt>
+                <dd className="font-mono">{r.variant_key}</dd>
+                <dt className="text-muted-foreground">Content policy</dt>
+                <dd>{r.content_policy}</dd>
+                <dt className="text-muted-foreground">Limit / epochs</dt>
+                <dd>
+                  {r.limit ?? 'all'} / {r.epochs}
+                </dd>
+                <dt className="text-muted-foreground">Versions</dt>
+                <dd>
+                  {Object.entries(versions)
+                    .map(([k, v]) => `${k} ${v}`)
+                    .join(', ') || '–'}
+                </dd>
+                <dt className="text-muted-foreground">Metrics</dt>
+                <dd className="font-mono break-all">{JSON.stringify(r.metrics)}</dd>
+                <dt className="text-muted-foreground">Inspect log</dt>
+                <dd className="font-mono break-all">{r.log_path ?? '–'}</dd>
+              </dl>
+            </CardContent>
+          </CollapsibleContent>
+        </Card>
+      </Collapsible>
+      <Card className="pb-0">
+        <CardHeader>
+          <CardTitle>Samples ({samples.data?.total ?? '…'})</CardTitle>
+          <CardAction>
+            <ToggleGroup
+              type="single"
+              variant="outline"
+              size="sm"
+              value={outcome}
+              onValueChange={(v) => {
+                if (v) {
+                  setOutcome(v)
+                  setPage(0)
+                }
+              }}
+            >
+              <ToggleGroupItem value="all">all {r.samples_done}</ToggleGroupItem>
+              {OUTCOMES.filter((o) => r.outcomes?.[o]).map((o) => (
+                <ToggleGroupItem key={o} value={o}>
+                  {o} {r.outcomes?.[o]}
+                </ToggleGroupItem>
               ))}
-            </tbody>
-          </table>
-        </div>
-        {samples.data && samples.data.total > pageSize && (
-          <div className="mt-6 flex items-center gap-2">
-            <Button disabled={page === 0} onClick={() => setPage(page - 1)}>
-              Previous
-            </Button>
-            <span className="text-xs text-muted">
-              {page * pageSize + 1}–{Math.min(samples.data.total, (page + 1) * pageSize)} of {samples.data.total}
-            </span>
-            <Button disabled={(page + 1) * pageSize >= samples.data.total} onClick={() => setPage(page + 1)}>
-              Next
-            </Button>
-          </div>
-        )}
+            </ToggleGroup>
+          </CardAction>
+        </CardHeader>
+        <CardContent className="px-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="pl-6">Sample</TableHead>
+                <TableHead>Outcome</TableHead>
+                <TableHead>Answer</TableHead>
+                <TableHead>Target</TableHead>
+                <TableHead className="text-right">Tokens</TableHead>
+                <TableHead className="pr-6">Trace</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {samples.data?.items.map((s) => (
+                <TableRow key={`${s.sample_id}-${s.epoch}`}>
+                  <TableCell className="pl-6 font-mono text-xs">
+                    {s.sample_id}
+                    {r.epochs > 1 && <span className="text-muted-foreground"> #{s.epoch}</span>}
+                  </TableCell>
+                  <TableCell>
+                    <StatusBadge value={s.outcome} />
+                  </TableCell>
+                  <TableCell className="max-w-[28ch] truncate" title={s.answer ?? s.error ?? ''}>
+                    {s.answer ?? s.error ?? (r.content_policy === 'metadata' ? 'withheld' : '–')}
+                  </TableCell>
+                  <TableCell className="max-w-[20ch] truncate" title={s.target ?? ''}>
+                    {s.target ?? '–'}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">{num(s.input_tokens + s.output_tokens)}</TableCell>
+                  <TableCell className="pr-6">
+                    {s.trace_id && (
+                      <Button variant="link" size="sm" className="h-auto p-0" asChild>
+                        <Link to={`/traces/${s.trace_id}`}>View trace</Link>
+                      </Button>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+          {total > PAGE_SIZE && (
+            <div className="flex items-center gap-2 border-t px-6 py-3">
+              <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage(page - 1)}>
+                Previous
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                {page * PAGE_SIZE + 1}–{Math.min(total, (page + 1) * PAGE_SIZE)} of {total}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={(page + 1) * PAGE_SIZE >= total}
+                onClick={() => setPage(page + 1)}
+              >
+                Next
+              </Button>
+            </div>
+          )}
+        </CardContent>
       </Card>
     </div>
   )

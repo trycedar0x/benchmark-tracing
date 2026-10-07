@@ -1,8 +1,18 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
+import { Play, Receipt } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { StatusBadge } from '@/components/status-badge'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
+import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Textarea } from '@/components/ui/textarea'
+import { errorMessage, money, num } from '@/lib/format'
 import { api, type Quote } from '../api'
-import { Badge, Button, Card, ErrorNote, inputCls, money, num, td, th } from '../ui'
 
 const MOCK = 'btmock/'
 
@@ -20,7 +30,11 @@ export default function NewRunPage() {
   const [quoteId, setQuoteId] = useState<string | null>(null)
 
   const modelList = useMemo(
-    () => modelText.split(/[\n,]/).map((m) => m.trim()).filter(Boolean),
+    () =>
+      modelText
+        .split(/[\n,]/)
+        .map((m) => m.trim())
+        .filter(Boolean),
     [modelText],
   )
   const allMock = modelList.length > 0 && modelList.every((m) => m.startsWith(MOCK))
@@ -60,84 +74,132 @@ export default function NewRunPage() {
     onSuccess: () => navigate('/'),
   })
 
+  const error = createQuote.error || startDirect.error || approveAndRun.error
+  const resetQuote = () => setQuoteId(null)
+
   return (
     <div className="grid gap-4">
-      <h1 className="text-xl font-semibold">New run</h1>
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        <Card title="Plan">
-          <form className="grid gap-4" onSubmit={(e) => e.preventDefault()}>
-            <label className="grid gap-1">
-              <span className="text-xs font-semibold text-muted">Benchmark</span>
-              <select id="benchmark" className={inputCls} value={benchmark} onChange={(e) => setBenchmark(e.target.value)}>
-                {catalog.data?.map((e) => (
-                  <option key={e.ref} value={e.ref}>
-                    {e.ref} · {e.family}
-                    {e.offline ? ' (offline)' : ''}
-                  </option>
-                ))}
-              </select>
-              {entry && (
-                <span className="text-xs text-muted">
-                  {entry.variant}. {num(entry.task_count)} tasks, graded by {entry.grader}.
-                  {entry.sandbox ? ' Needs Docker.' : ''}
-                </span>
-              )}
-            </label>
-            <label className="grid gap-1">
-              <span className="text-xs font-semibold text-muted">Models, one per line</span>
-              <textarea
-                id="models"
-                className={`${inputCls} h-24 font-mono`}
-                value={modelText}
-                onChange={(e) => {
-                  setModelText(e.target.value)
-                  setQuoteId(null)
-                }}
-                placeholder="openai/gpt-4o-mini"
-              />
-              <span className="text-xs text-muted">
-                Inspect model names, e.g. <code>openai/gpt-4o-mini</code>. Priced models:{' '}
-                {models.data?.map((m) => m.model).join(', ')}
-              </span>
-            </label>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <label className="grid gap-1">
-                <span className="text-xs font-semibold text-muted">Limit</span>
-                <input id="limit" className={inputCls} inputMode="numeric" placeholder="all" value={limit} onChange={(e) => { setLimit(e.target.value); setQuoteId(null) }} />
-              </label>
-              <label className="grid gap-1">
-                <span className="text-xs font-semibold text-muted">Epochs</span>
-                <input id="epochs" className={inputCls} inputMode="numeric" value={epochs} onChange={(e) => setEpochs(e.target.value)} />
-              </label>
-              <label className="grid gap-1">
-                <span className="text-xs font-semibold text-muted">Content</span>
-                <select id="content" className={inputCls} value={content} onChange={(e) => setContent(e.target.value)}>
-                  <option value="full">full</option>
-                  <option value="redacted">redacted</option>
-                  <option value="metadata">metadata only</option>
-                </select>
-              </label>
-              <label className="grid gap-1">
-                <span className="text-xs font-semibold text-muted">Budget cap (USD)</span>
-                <input id="cap" className={inputCls} inputMode="decimal" placeholder="none" value={cap} onChange={(e) => setCap(e.target.value)} />
-              </label>
-            </div>
-            <ErrorNote error={createQuote.error || startDirect.error || approveAndRun.error} />
+      <h1 className="text-2xl font-semibold tracking-tight">New run</h1>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Plan</CardTitle>
+            <CardDescription>Pick a benchmark variant and the models to evaluate.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={(e) => e.preventDefault()}>
+              <FieldGroup>
+                <Field>
+                  <FieldLabel htmlFor="benchmark">Benchmark</FieldLabel>
+                  <Select
+                    value={benchmark}
+                    onValueChange={(v) => {
+                      setBenchmark(v)
+                      resetQuote()
+                    }}
+                  >
+                    <SelectTrigger id="benchmark" className="w-full">
+                      <SelectValue placeholder="Choose a benchmark" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {catalog.data?.map((e) => (
+                        <SelectItem key={e.ref} value={e.ref}>
+                          {e.ref} · {e.family}
+                          {e.offline ? ' (offline)' : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {entry && (
+                    <FieldDescription>
+                      {entry.variant}. {num(entry.task_count)} tasks, graded by {entry.grader}.
+                      {entry.sandbox ? ' Needs Docker.' : ''}
+                    </FieldDescription>
+                  )}
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="models">Models, one per line</FieldLabel>
+                  <Textarea
+                    id="models"
+                    className="font-mono"
+                    rows={4}
+                    value={modelText}
+                    onChange={(e) => {
+                      setModelText(e.target.value)
+                      resetQuote()
+                    }}
+                    placeholder="openai/gpt-4o-mini"
+                  />
+                  <FieldDescription>
+                    Inspect model names. Priced models: {models.data?.map((m) => m.model).join(', ')}
+                  </FieldDescription>
+                </Field>
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                  <Field>
+                    <FieldLabel htmlFor="limit">Limit</FieldLabel>
+                    <Input
+                      id="limit"
+                      inputMode="numeric"
+                      placeholder="all"
+                      value={limit}
+                      onChange={(e) => {
+                        setLimit(e.target.value)
+                        resetQuote()
+                      }}
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="epochs">Epochs</FieldLabel>
+                    <Input id="epochs" inputMode="numeric" value={epochs} onChange={(e) => setEpochs(e.target.value)} />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="content">Content</FieldLabel>
+                    <Select value={content} onValueChange={setContent}>
+                      <SelectTrigger id="content" className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="full">Full</SelectItem>
+                        <SelectItem value="redacted">Redacted</SelectItem>
+                        <SelectItem value="metadata">Metadata only</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="cap">Budget cap (USD)</FieldLabel>
+                    <Input
+                      id="cap"
+                      inputMode="decimal"
+                      placeholder="none"
+                      value={cap}
+                      onChange={(e) => setCap(e.target.value)}
+                    />
+                  </Field>
+                </div>
+                {error && (
+                  <Alert variant="destructive">
+                    <AlertDescription>{errorMessage(error)}</AlertDescription>
+                  </Alert>
+                )}
+              </FieldGroup>
+            </form>
+          </CardContent>
+          <CardFooter className="flex flex-col items-start gap-3">
             <div className="flex flex-wrap gap-2">
-              <Button kind="primary" disabled={!modelList.length || createQuote.isPending} onClick={() => createQuote.mutate()}>
-                Get quote
+              <Button disabled={!modelList.length || createQuote.isPending} onClick={() => createQuote.mutate()}>
+                <Receipt /> Get quote
               </Button>
               {allMock && (
-                <Button disabled={startDirect.isPending} onClick={() => startDirect.mutate()}>
-                  Run now (mock models)
+                <Button variant="outline" disabled={startDirect.isPending} onClick={() => startDirect.mutate()}>
+                  <Play /> Run now (mock models)
                 </Button>
               )}
             </div>
-            <p className="text-xs text-muted">
-              A quote runs 5 samples per model and extrapolates tokens and cost. With paid models that sample run
-              is billed. Paid models need an approved quote.
+            <p className="text-sm text-muted-foreground">
+              A quote runs 5 samples per model and extrapolates tokens and cost. With paid models that sample is
+              billed. Paid models need an approved quote.
             </p>
-          </form>
+          </CardFooter>
         </Card>
         <QuoteCard
           quote={quote.data}
@@ -150,63 +212,87 @@ export default function NewRunPage() {
   )
 }
 
-function QuoteCard({ quote, cap, onApprove, approving }: { quote?: Quote; cap: string; onApprove: () => void; approving: boolean }) {
+function QuoteCard({
+  quote,
+  cap,
+  onApprove,
+  approving,
+}: {
+  quote?: Quote
+  cap: string
+  onApprove: () => void
+  approving: boolean
+}) {
   if (!quote) {
     return (
-      <Card title="Quote">
-        <p className="text-sm text-muted">Get a quote to see estimated tokens and cost before running.</p>
+      <Card>
+        <CardHeader>
+          <CardTitle>Quote</CardTitle>
+          <CardDescription>Get a quote to see estimated tokens and cost before running.</CardDescription>
+        </CardHeader>
       </Card>
     )
   }
   const upper = Object.values(quote.estimate).reduce((sum, e) => sum + (e.cost_usd_range?.[1] ?? 0), 0)
   return (
-    <Card title={<span className="flex items-center gap-2">Quote <span className="font-mono text-xs text-muted">{quote.id}</span></span>} actions={<Badge value={quote.status} />}>
-      {quote.status === 'estimating' ? (
-        <p className="text-sm text-muted">Running {quote.sample_size} samples per model…</p>
-      ) : (
-        <div className="grid gap-3">
-          <p className="text-sm">
-            {quote.benchmark}, {num(quote.samples_planned)} samples planned per model.
-          </p>
-          <div className="-mx-4 overflow-x-auto">
-            <table className="w-full min-w-[480px] text-[13px]">
-              <thead className="border-b border-line">
-                <tr>
-                  <th className={th}>Model</th>
-                  <th className={`${th} text-right`}>Tokens (est.)</th>
-                  <th className={`${th} text-right`}>Cost (est.)</th>
-                  <th className={`${th} text-right`}>95% range</th>
-                </tr>
-              </thead>
-              <tbody>
+    <Card>
+      <CardHeader>
+        <CardTitle>Quote</CardTitle>
+        <CardDescription className="font-mono">{quote.id}</CardDescription>
+        <CardAction>
+          <StatusBadge value={quote.status} />
+        </CardAction>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        {quote.status === 'estimating' ? (
+          <p className="text-sm text-muted-foreground">Running {quote.sample_size} samples per model…</p>
+        ) : (
+          <>
+            <p className="text-sm">
+              {quote.benchmark}, {num(quote.samples_planned)} samples planned per model.
+            </p>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Model</TableHead>
+                  <TableHead className="text-right">Tokens (est.)</TableHead>
+                  <TableHead className="text-right">Cost (est.)</TableHead>
+                  <TableHead className="text-right">95% range</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {Object.entries(quote.estimate).map(([model, e]) => (
-                  <tr key={model} className="border-b border-line last:border-0">
-                    <td className={`${td} font-mono text-xs`}>
+                  <TableRow key={model}>
+                    <TableCell className="font-mono text-xs">
                       {model}
-                      {e.note && <div className="font-sans text-muted">{e.note}</div>}
-                    </td>
-                    <td className={`${td} tabular text-right`}>{num(Math.round((e.input_tokens ?? 0) + (e.output_tokens ?? 0)))}</td>
-                    <td className={`${td} tabular text-right`}>{money(e.cost_usd)}</td>
-                    <td className={`${td} tabular text-right`}>
+                      {e.note && <div className="font-sans text-muted-foreground">{e.note}</div>}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {num(Math.round((e.input_tokens ?? 0) + (e.output_tokens ?? 0)))}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">{money(e.cost_usd)}</TableCell>
+                    <TableCell className="text-right tabular-nums">
                       {e.cost_usd_range ? `${money(e.cost_usd_range[0])} – ${money(e.cost_usd_range[1])}` : '–'}
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
-          </div>
-          <p className="text-sm">
-            Upper estimate: <strong>{money(upper)}</strong>. Cap: <strong>{cap ? money(Number(cap)) : 'none'}</strong>
-            {cap ? ', split evenly across models.' : '.'} Caps cover calls the runner reports; provider billing may differ.
-          </p>
-          {quote.status === 'draft' && (
-            <div>
-              <Button kind="primary" disabled={approving} onClick={onApprove}>
-                Approve and run
-              </Button>
-            </div>
-          )}
-        </div>
+              </TableBody>
+            </Table>
+            <p className="text-sm text-muted-foreground">
+              Upper estimate <span className="font-medium text-foreground">{money(upper)}</span>. Cap{' '}
+              <span className="font-medium text-foreground">{cap ? money(Number(cap)) : 'none'}</span>
+              {cap ? ', split evenly across models' : ''}. Caps cover calls the runner reports; provider billing may
+              differ.
+            </p>
+          </>
+        )}
+      </CardContent>
+      {quote.status === 'draft' && (
+        <CardFooter>
+          <Button disabled={approving} onClick={onApprove}>
+            Approve and run
+          </Button>
+        </CardFooter>
       )}
     </Card>
   )
