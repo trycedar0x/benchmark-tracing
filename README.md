@@ -1,6 +1,12 @@
 # benchtrace
 
+[![CI](https://github.com/trycedar0x/benchmark-tracing/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/trycedar0x/benchmark-tracing/actions/workflows/ci.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](pyproject.toml)
+
 Run established benchmarks against any model, see a trace for every task, and compare runs with paired statistics. Open source, local-first, no account needed.
+
+![Comparing two runs of the same benchmark: score difference with a confidence interval, McNemar's test, and the per-task regressions and improvements](docs/media/ui-2-compare.png)
 
 benchtrace reuses existing evaluation tools instead of rebuilding them: [Inspect AI](https://github.com/UKGovernmentBEIS/inspect_ai) runs the benchmarks and [inspect_evals](https://github.com/UKGovernmentBEIS/inspect_evals) supplies them. benchtrace adds the parts around them:
 
@@ -21,6 +27,8 @@ uv run benchtrace run toy-arith -m btmock/strong -m btmock/weak
 uv run benchtrace compare <run-a> <run-b>
 uv run benchtrace trace <run-b> arith-001
 ```
+
+![Terminal: comparing two runs, printing the span tree of a failed task, and diffing the two runs' trajectories to the step where they diverged](docs/media/cli-compare-trace-diff.gif)
 
 `btmock/*` models are deterministic mock models bundled for demos and tests. `toy-arith` and `toy-tools` are bundled benchmarks; `toy-tools` exercises tool calls.
 
@@ -85,6 +93,10 @@ with bt.trace("answer-question", task_id="q-17"):
         bt.record(span, "output", "...")                         # kept only if the policy allows
 print(bt.flush().receipts)                                       # per-trace receipt: expected vs received spans
 ```
+
+An [OpenAI Agents SDK agent](examples/openai_agents_trace.py) traced through OpenInference, with its model calls and tool call:
+
+![Span tree of an OpenAI Agents SDK run: agent, turns, model calls with token counts, and a lookup_order tool call](docs/media/ui-9-openai-agents-trace.png)
 
 Delivery is crash-safe. The content policy is applied before anything touches disk. Every batch is written to a local spool (fsync and atomic rename) before it is sent, and is deleted only after the server acknowledges it. Batches left behind by a crash are sent by the next client for the same endpoint. Each batch has a stable id, so a retry after a lost acknowledgement is not stored twice. A full spool refuses new spans and reports them in `bt.health()` instead of silently dropping them. When a `trace` block exits, it seals the trace with its span count. The trace shows as `closed` once every span has arrived, or `incomplete` if some are missing. A closed trace means everything the producer declared was received. It does not prove the instrumentation was complete.
 
