@@ -307,6 +307,19 @@ def create_app(workers: int = 0) -> FastAPI:
                 "spans": [row_dict(s, exclude=("id", "workspace_id")) for s in spans],
             }
 
+    @app.get("/api/trace-diff")
+    def trace_diff(a: str, b: str, ws: WorkspaceContext = Depends(current_workspace)) -> dict[str, Any]:
+        from benchtrace.trace_diff import diff_traces
+
+        with session_scope() as session:
+            try:
+                result = diff_traces(session, a, b)
+            except LookupError as ex:
+                raise HTTPException(404, str(ex)) from ex
+            if result.a["workspace_id"] != ws.workspace_id or result.b["workspace_id"] != ws.workspace_id:
+                raise HTTPException(404, "Trace not found")
+            return result.to_dict()
+
     # -- web UI
 
     static_dir = Path(str(resources.files("benchtrace") / "static"))

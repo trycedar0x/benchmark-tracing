@@ -81,7 +81,7 @@ def catalog(
             _fail(str(ex))
         data = entry.model_dump() | {"ref": entry.ref, "variant_key": entry.variant_key}
         if as_json:
-            console.print_json(json.dumps(data))
+            print(json.dumps(data))
             return
         table = Table(show_header=False, box=None)
         for key, value in data.items():
@@ -91,7 +91,7 @@ def catalog(
         return
     entries = sorted(load_catalog().values(), key=lambda e: (not e.offline, e.id))
     if as_json:
-        console.print_json(json.dumps([e.model_dump() | {"ref": e.ref} for e in entries]))
+        print(json.dumps([e.model_dump() | {"ref": e.ref} for e in entries]))
         return
     table = Table(title="Benchmark catalog")
     for col in ("Benchmark", "Family", "Variant", "Tasks", "Grader", "Needs"):
@@ -458,6 +458,49 @@ def trace(
 
 
 @app.command()
+def diff(
+    run_a: str,
+    run_b: str,
+    sample_id: str,
+    epoch: Annotated[int, typer.Option(help="Epoch.")] = 1,
+) -> None:
+    """Diff the traces of one sample across two runs: where did they diverge?"""
+    from benchtrace.trace_diff import diff_traces
+
+    with session_scope() as session:
+        ids = []
+        for run_id in (run_a, run_b):
+            sample = session.scalars(
+                select(SampleResult).where(
+                    SampleResult.run_id == run_id, SampleResult.sample_id == sample_id, SampleResult.epoch == epoch
+                )
+            ).first()
+            if sample is None or not sample.trace_id:
+                _fail(f"Sample {sample_id} (epoch {epoch}) not found in {run_id}")
+            ids.append(sample.trace_id)
+        result = diff_traces(session, ids[0], ids[1])
+    console.print(
+        f"A: {result.a['outcome']} (score {result.a['score']})   B: {result.b['outcome']} (score {result.b['score']})"
+    )
+    console.print(f"[bold]{escape(result.summary)}[/bold]")
+    table = Table()
+    for col in ("#", "Step", "A", "B", "Differs"):
+        table.add_column(col, overflow="fold")
+    for i, p in enumerate(result.pairs, 1):
+        step = p.a or p.b
+        color = {"same": "dim", "changed": "yellow", "only_a": "red", "only_b": "green"}[p.op]
+        marker = "→ " if result.first_divergence == i - 1 else ""
+        table.add_row(
+            f"{marker}{i}",
+            f"[{color}]{step.kind} {escape(step.name)}[/{color}]",
+            escape(p.a.summary) if p.a else "–",
+            escape(p.b.summary) if p.b else "–",
+            ", ".join(p.differences) or ("" if p.op == "same" else p.op),
+        )
+    console.print(table)
+
+
+@app.command()
 def compare(
     run_a: str,
     run_b: str,
@@ -471,7 +514,7 @@ def compare(
     except LookupError as ex:
         _fail(str(ex))
     if as_json:
-        console.print_json(json.dumps(result.to_dict(), default=str))
+        print(json.dumps(result.to_dict(), default=str))
         return
     c = result.compatibility
     for msg in c.blocking:

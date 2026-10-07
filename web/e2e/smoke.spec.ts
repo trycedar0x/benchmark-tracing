@@ -29,6 +29,9 @@ test('core pages render without errors', async ({ page, request }) => {
   const samples = await (await request.get(`/api/runs/${ids[1]}/samples?limit=1`)).json()
   await visit(page, `/traces/${samples.items[0].trace_id}`, 'trace', /Spans/)
   await visit(page, `/compare?a=${ids[0]}&b=${ids[1]}`, 'compare', /McNemar/)
+  const cmp = await (await request.get(`/api/compare?a=${ids[0]}&b=${ids[1]}`)).json()
+  const changed = cmp.rows.find((r: { change: string }) => r.change === 'regression' || r.change === 'improvement')
+  await visit(page, `/diff?a=${changed.a_trace_id}&b=${changed.b_trace_id}`, 'diff', /First divergence/)
   await visit(page, '/catalog', 'catalog', /gsm8k@1/)
 })
 

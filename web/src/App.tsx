@@ -7,6 +7,7 @@ import NewRunPage from './pages/NewRun'
 import RunPage from './pages/Run'
 import RunsPage from './pages/Runs'
 import TracePage from './pages/Trace'
+import TraceDiffPage from './pages/TraceDiff'
 
 const links = [
   { to: '/', label: 'Runs', end: true },
@@ -44,6 +45,7 @@ export default function App() {
           <Route path="/runs/:runId" element={<RunPage />} />
           <Route path="/traces/:traceId" element={<TracePage />} />
           <Route path="/compare" element={<ComparePage />} />
+          <Route path="/diff" element={<TraceDiffPage />} />
           <Route path="/catalog" element={<CatalogPage />} />
           <Route path="*" element={<p className="text-muted-foreground">Page not found.</p>} />
         </Routes>

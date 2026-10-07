@@ -160,6 +160,16 @@ export type Comparison = {
   rows: PairRow[]
 }
 
+export type DiffStep = { span_id: string; kind: string; name: string; status: string; summary: string; output: Record<string, unknown> }
+
+export type TraceDiff = {
+  a: { trace_id: string; run_id: string | null; name: string | null; outcome: string | null; score: number | null }
+  b: { trace_id: string; run_id: string | null; name: string | null; outcome: string | null; score: number | null }
+  pairs: { op: 'same' | 'changed' | 'only_a' | 'only_b'; a: DiffStep | null; b: DiffStep | null; differences: string[] }[]
+  first_divergence: number | null
+  summary: string
+}
+
 export class ApiError extends Error {
   status: number
   constructor(status: number, message: string) {
@@ -204,6 +214,7 @@ export const api = {
   compare: (a: string, b: string, force = false) =>
     request<Comparison>(`/api/compare?${new URLSearchParams({ a, b, force: String(force) })}`),
   trace: (id: string) => request<TraceDetail>(`/api/traces/${id}`),
+  traceDiff: (a: string, b: string) => request<TraceDiff>(`/api/trace-diff?${new URLSearchParams({ a, b })}`),
   traces: (params: Record<string, string> = {}) =>
     request<TraceHeader[]>(`/api/traces?${new URLSearchParams(params)}`),
 }

@@ -19,9 +19,9 @@ MAX_TEXT = 8000
 SKIPPED_EVENTS = {"span_begin", "span_end", "state", "store", "step", "sample_init", "anchor", "timeline"}
 SPAN_KINDS = {
     "solver": "solver",
-    "solvers": "solver",
+    "solvers": "span",
     "scorer": "scorer",
-    "scorers": "scorer",
+    "scorers": "span",
     "agent": "agent",
     "tool": "tool",
     "handoff": "agent",
@@ -257,10 +257,15 @@ def convert_sample(sample: EvalSample, run_id: str) -> dict[str, Any]:
                 score_value = _to_float(sc.value)
             except Exception:
                 score_value = None
+            # Inspect emits the score event inside the scorer's own span; merge into it.
+            owner = spans.get(parent)
+            if owner and owner["attributes"].get("inspect.type") == "scorer" and owner["content"] is None:
+                span = owner
             span.update(
                 name=getattr(ev, "scorer", None) or "score",
                 kind="scorer",
                 attributes={
+                    **span["attributes"],
                     "score.value": score_value,
                     "score.raw": str(sc.value),
                     "score.intermediate": ev.intermediate,
