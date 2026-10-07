@@ -7,6 +7,10 @@ x-benchtrace: &benchtrace
   environment: &env
     BENCHTRACE_DATABASE_URL: postgresql+psycopg://benchtrace:benchtrace@db:5432/benchtrace
     BENCHTRACE_HOME: /data
+    # Authentication and encrypted secrets. Create the first user with:
+    #   docker compose run --rm api benchtrace admin create-user you@example.com --workspace main
+    BENCHTRACE_AUTH: ${BENCHTRACE_AUTH:-1}
+    BENCHTRACE_SECRET_KEY: ${BENCHTRACE_SECRET_KEY:?set BENCHTRACE_SECRET_KEY to a long random string}
     OPENAI_API_KEY: ${OPENAI_API_KEY:-}
     ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
@@ -35,12 +39,17 @@ services:
     <<: *benchtrace
     command: ["benchtrace", "serve", "--host", "0.0.0.0", "--workers", "0"]
     ports:
-      # Bound to localhost: enable auth (BENCHTRACE_AUTH=1) before exposing it further.
+      # Bound to localhost. Put TLS in front before exposing it beyond this machine.
       - "127.0.0.1:8321:8321"
 
   worker:
     <<: *benchtrace
     command: ["benchtrace", "worker", "--concurrency", "2"]
+    # Sandboxed benchmarks (HumanEval, MBPP, Harbor agent benchmarks) start Docker containers.
+    # Uncomment to let the worker use the host's Docker daemon; this grants it root-equivalent access.
+    # volumes:
+    #   - benchtrace-data:/data
+    #   - /var/run/docker.sock:/var/run/docker.sock
 
 volumes:
   benchtrace-data:

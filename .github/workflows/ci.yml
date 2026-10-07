@@ -1,0 +1,50 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        database: [sqlite, postgres]
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: bt
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 2s --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --all-extras
+      - run: uv run ruff check src tests
+      - name: Tests
+        run: uv run pytest -q
+        env:
+          BENCHTRACE_TEST_POSTGRES: ${{ matrix.database == 'postgres' && 'postgresql+psycopg://postgres:bt@localhost:5432/postgres' || '' }}
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: astral-sh/setup-uv@v6
+      - run: npm --prefix web ci
+      - run: npm --prefix web run build
+      - run: uv sync --extra benchmarks
+      - run: npx --prefix web playwright install --with-deps chromium
+      - name: Browser smoke tests
+        run: |
+          export BENCHTRACE_HOME=$RUNNER_TEMP/bt
+          uv run benchtrace serve --port 8321 &
+          for i in $(seq 1 60); do curl -sf localhost:8321/api/health && break; sleep 1; done
+          cd web && npx playwright test --reporter=line

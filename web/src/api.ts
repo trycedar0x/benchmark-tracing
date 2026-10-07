@@ -69,7 +69,11 @@ export type CatalogEntry = {
   variant_key: string
 }
 
-export type ModelPrice = { model: string; mock: boolean; price: { input: number; output: number; as_of: string | null; source: string | null } }
+export type ModelPrice = {
+  model: string
+  mock: boolean
+  price: { input: number; output: number; as_of: string | null; source: string | null }
+}
 
 export type ModelEstimate = {
   samples_measured: number
@@ -160,12 +164,24 @@ export type Comparison = {
   rows: PairRow[]
 }
 
-export type DiffStep = { span_id: string; kind: string; name: string; status: string; summary: string; output: Record<string, unknown> }
+export type DiffStep = {
+  span_id: string
+  kind: string
+  name: string
+  status: string
+  summary: string
+  output: Record<string, unknown>
+}
 
 export type TraceDiff = {
   a: { trace_id: string; run_id: string | null; name: string | null; outcome: string | null; score: number | null }
   b: { trace_id: string; run_id: string | null; name: string | null; outcome: string | null; score: number | null }
-  pairs: { op: 'same' | 'changed' | 'only_a' | 'only_b'; a: DiffStep | null; b: DiffStep | null; differences: string[] }[]
+  pairs: {
+    op: 'same' | 'changed' | 'only_a' | 'only_b'
+    a: DiffStep | null
+    b: DiffStep | null
+    differences: string[]
+  }[]
   first_divergence: number | null
   summary: string
 }
@@ -184,7 +200,13 @@ export type ImportRun = {
   error: string | null
 }
 
-export type Dataset = { id: string; name: string; description: string | null; created_at: string; counts?: Record<string, number> }
+export type Dataset = {
+  id: string
+  name: string
+  description: string | null
+  created_at: string
+  counts?: Record<string, number>
+}
 
 export type DatasetItem = {
   id: number
@@ -204,6 +226,26 @@ export type DatasetItem = {
   reviewed_by: string | null
 }
 
+export type Me = {
+  auth_enabled: boolean
+  user: string
+  role: string
+  via: string
+  workspace: { id: string; name: string } | null
+  workspaces: { id: string; name: string; role: string }[]
+}
+
+export type ApiKeyRow = {
+  id: string
+  name: string
+  prefix: string
+  role: string
+  created_by: string | null
+  created_at: string
+  last_used_at: string | null
+  revoked_at: string | null
+}
+
 export class ApiError extends Error {
   status: number
   constructor(status: number, message: string) {
@@ -212,10 +254,31 @@ export class ApiError extends Error {
   }
 }
 
+let workspaceId: string | null = null
+try {
+  workspaceId = localStorage.getItem('benchtrace.workspace')
+} catch {
+  /* storage unavailable */
+}
+
+export function selectWorkspace(id: string) {
+  workspaceId = id
+  try {
+    localStorage.setItem('benchtrace.workspace', id)
+  } catch {
+    /* storage unavailable */
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
     ...init,
-    headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
+    credentials: 'same-origin',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(workspaceId ? { 'X-Benchtrace-Workspace': workspaceId } : {}),
+      ...(init?.headers ?? {}),
+    },
   })
   if (!res.ok) {
     let detail = res.statusText
@@ -248,6 +311,22 @@ export const api = {
   compare: (a: string, b: string, force = false) =>
     request<Comparison>(`/api/compare?${new URLSearchParams({ a, b, force: String(force) })}`),
   trace: (id: string) => request<TraceDetail>(`/api/traces/${id}`),
+  me: () => request<Me>('/api/auth/me'),
+  login: (email: string, password: string) =>
+    request<{ ok: boolean }>('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
+  logout: () => request<{ ok: boolean }>('/api/auth/logout', { method: 'POST' }),
+  keys: () => request<ApiKeyRow[]>('/api/keys'),
+  createKey: (name: string, role: string) =>
+    request<{ key: string }>('/api/keys', { method: 'POST', body: JSON.stringify({ name, role }) }),
+  revokeKey: (id: string) => request<{ ok: boolean }>(`/api/keys/${id}`, { method: 'DELETE' }),
+  secrets: () => request<{ name: string; updated_at: string }[]>('/api/secrets'),
+  setSecret: (name: string, value: string) =>
+    request<{ ok: boolean }>(`/api/secrets/${encodeURIComponent(name)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ value }),
+    }),
+  deleteSecret: (name: string) =>
+    request<{ ok: boolean }>(`/api/secrets/${encodeURIComponent(name)}`, { method: 'DELETE' }),
   imports: () => request<ImportRun[]>('/api/imports'),
   startImport: (body: Record<string, unknown>) =>
     request<ImportRun>('/api/imports', { method: 'POST', body: JSON.stringify(body) }),
@@ -260,8 +339,7 @@ export const api = {
   reviewItem: (id: string, itemId: number, body: Record<string, unknown>) =>
     request<DatasetItem>(`/api/datasets/${id}/items/${itemId}`, { method: 'PATCH', body: JSON.stringify(body) }),
   traceDiff: (a: string, b: string) => request<TraceDiff>(`/api/trace-diff?${new URLSearchParams({ a, b })}`),
-  traces: (params: Record<string, string> = {}) =>
-    request<TraceHeader[]>(`/api/traces?${new URLSearchParams(params)}`),
+  traces: (params: Record<string, string> = {}) => request<TraceHeader[]>(`/api/traces?${new URLSearchParams(params)}`),
 }
 
 export const TERMINAL = new Set(['succeeded', 'failed', 'cancelled', 'budget_exceeded'])

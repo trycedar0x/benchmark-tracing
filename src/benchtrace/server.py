@@ -59,11 +59,37 @@ def run_dict(run: Run, full: bool = False) -> dict[str, Any]:
 class WorkspaceContext(BaseModel):
     workspace_id: str | None = None
     user: str = "local"
+    role: str = "owner"
+    via: str = "local"
+
+
+SESSION_COOKIE = "bt_session"
+READ_METHODS = {"GET", "HEAD", "OPTIONS"}
 
 
 def current_workspace(request: Request) -> WorkspaceContext:
-    """Single-workspace mode until auth is enabled."""
-    return WorkspaceContext()
+    """Resolve the caller's workspace and role. Local mode (auth off) is one workspace with full access."""
+    from benchtrace.auth import AuthError, authenticate
+
+    header = request.headers.get("authorization", "")
+    bearer = header[7:].strip() if header.lower().startswith("bearer ") else None
+    try:
+        principal = authenticate(
+            bearer, request.cookies.get(SESSION_COOKIE), request.headers.get("x-benchtrace-workspace")
+        )
+    except AuthError as ex:
+        raise HTTPException(401, str(ex)) from ex
+    if principal.role == "viewer" and request.method not in READ_METHODS:
+        raise HTTPException(403, "Viewers have read-only access.")
+    return WorkspaceContext(
+        workspace_id=principal.workspace_id, user=principal.user, role=principal.role, via=principal.via
+    )
+
+
+def require_owner(ws: WorkspaceContext = Depends(current_workspace)) -> WorkspaceContext:
+    if ws.role != "owner":
+        raise HTTPException(403, "Only workspace owners can do this.")
+    return ws
 
 
 # ---------------------------------------------------------------------------- request models
@@ -118,6 +144,20 @@ class ReviewRequest(BaseModel):
     status: str | None = None
 
 
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class KeyRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    role: str = "member"
+
+
+class SecretRequest(BaseModel):
+    value: str = Field(min_length=1, max_length=10000)
+
+
 class SealRequest(BaseModel):
     expected_spans: int = Field(ge=0)
 
@@ -147,6 +187,127 @@ def create_app(workers: int = 0) -> FastAPI:
     @app.exception_handler(CatalogError)
     async def catalog_error(_: Request, ex: CatalogError) -> JSONResponse:
         return JSONResponse(status_code=404, content={"detail": str(ex)})
+
+    # -- authentication
+
+    @app.post("/api/auth/login")
+    def auth_login(body: LoginRequest, request: Request) -> JSONResponse:
+        from benchtrace.auth import AuthError, auth_enabled, login
+
+        if not auth_enabled():
+            raise HTTPException(400, "Authentication is not enabled on this server.")
+        try:
+            token = login(body.email, body.password)
+        except AuthError as ex:
+            raise HTTPException(401, str(ex)) from ex
+        response = JSONResponse({"ok": True})
+        response.set_cookie(
+            SESSION_COOKIE,
+            token,
+            httponly=True,
+            samesite="strict",
+            max_age=14 * 86400,
+            secure=request.url.scheme == "https",
+        )
+        return response
+
+    @app.post("/api/auth/logout")
+    def auth_logout(request: Request) -> JSONResponse:
+        from benchtrace.auth import logout
+
+        token = request.cookies.get(SESSION_COOKIE)
+        if token:
+            logout(token)
+        response = JSONResponse({"ok": True})
+        response.delete_cookie(SESSION_COOKIE)
+        return response
+
+    @app.get("/api/auth/me")
+    def auth_me(ws: WorkspaceContext = Depends(current_workspace)) -> dict[str, Any]:
+        from benchtrace.auth import auth_enabled, memberships
+        from benchtrace.db import User, Workspace
+
+        out: dict[str, Any] = {
+            "auth_enabled": auth_enabled(),
+            "user": ws.user,
+            "role": ws.role,
+            "via": ws.via,
+            "workspace": None,
+            "workspaces": [],
+        }
+        if ws.workspace_id:
+            with session_scope() as session:
+                current = session.get(Workspace, ws.workspace_id)
+                out["workspace"] = {"id": current.id, "name": current.name}
+                user = session.scalars(select(User).where(User.email == ws.user)).first()
+                if user:
+                    out["workspaces"] = [
+                        {"id": w.id, "name": w.name, "role": r} for w, r in memberships(session, user.id)
+                    ]
+        return out
+
+    @app.get("/api/keys")
+    def list_keys(ws: WorkspaceContext = Depends(current_workspace)) -> list[dict[str, Any]]:
+        from benchtrace.db import ApiKey
+
+        if not ws.workspace_id:
+            return []
+        with session_scope() as session:
+            rows = session.scalars(
+                select(ApiKey).where(ApiKey.workspace_id == ws.workspace_id).order_by(ApiKey.created_at.desc())
+            ).all()
+            return [row_dict(k, exclude=("key_hash",)) for k in rows]
+
+    @app.post("/api/keys", status_code=201)
+    def new_key(body: KeyRequest, ws: WorkspaceContext = Depends(current_workspace)) -> dict[str, Any]:
+        from benchtrace.auth import ROLES, create_api_key
+
+        if not ws.workspace_id:
+            raise HTTPException(400, "API keys need authentication enabled (BENCHTRACE_AUTH=1).")
+        if body.role not in ROLES or (body.role == "owner" and ws.role != "owner"):
+            raise HTTPException(403, "You cannot create a key with that role.")
+        if ws.role == "viewer":
+            raise HTTPException(403, "Viewers cannot create keys.")
+        return {
+            "key": create_api_key(ws.workspace_id, body.name, body.role, created_by=ws.user),
+            "note": "Shown once. Store it securely.",
+        }
+
+    @app.delete("/api/keys/{key_id}")
+    def revoke_key(key_id: str, ws: WorkspaceContext = Depends(current_workspace)) -> dict[str, Any]:
+        from benchtrace.db import ApiKey, now
+
+        with session_scope() as session:
+            key = session.get(ApiKey, key_id)
+            if key is None or key.workspace_id != ws.workspace_id:
+                raise HTTPException(404, "Key not found")
+            if ws.role != "owner" and key.created_by != ws.user:
+                raise HTTPException(403, "Only owners can revoke other people's keys.")
+            key.revoked_at = now()
+        return {"ok": True}
+
+    @app.get("/api/secrets")
+    def get_secrets(ws: WorkspaceContext = Depends(current_workspace)) -> list[dict[str, Any]]:
+        from benchtrace.auth import list_secrets
+
+        return list_secrets(ws.workspace_id)
+
+    @app.put("/api/secrets/{name}")
+    def put_secret(name: str, body: SecretRequest, ws: WorkspaceContext = Depends(require_owner)) -> dict[str, Any]:
+        from benchtrace.auth import AuthError, set_secret
+
+        try:
+            set_secret(ws.workspace_id, name, body.value)
+        except AuthError as ex:
+            raise HTTPException(400, str(ex)) from ex
+        return {"name": name, "ok": True}
+
+    @app.delete("/api/secrets/{name}")
+    def remove_secret(name: str, ws: WorkspaceContext = Depends(require_owner)) -> dict[str, Any]:
+        from benchtrace.auth import delete_secret
+
+        delete_secret(ws.workspace_id, name)
+        return {"ok": True}
 
     @app.get("/api/health")
     def health() -> dict[str, Any]:

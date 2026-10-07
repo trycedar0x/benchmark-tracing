@@ -784,6 +784,68 @@ def dataset_export(
     console.print(f"Wrote {len(rows)} approved item(s) to {out}")
 
 
+admin_app = typer.Typer(
+    help="Manage users, workspaces, API keys and secrets (server with BENCHTRACE_AUTH=1).", no_args_is_help=True
+)
+app.add_typer(admin_app, name="admin")
+
+
+@admin_app.command("create-user")
+def admin_create_user(
+    email: str,
+    workspace: Annotated[str, typer.Option(help="Workspace name; created if missing.")],
+    role: Annotated[str, typer.Option(help="owner, member or viewer.")] = "owner",
+) -> None:
+    """Create a user (or add an existing one) in a workspace. Prompts for a password."""
+    from benchtrace.auth import AuthError, create_user
+
+    password = typer.prompt("Password (10+ characters)", hide_input=True, confirmation_prompt=True)
+    try:
+        create_user(email, password, workspace, role)
+    except AuthError as ex:
+        _fail(str(ex))
+    console.print(f"{email} is {role} of workspace {workspace}.")
+
+
+@admin_app.command("create-key")
+def admin_create_key(
+    workspace: Annotated[str, typer.Option(help="Workspace name.")],
+    name: Annotated[str, typer.Option(help="What the key is for.")],
+    role: Annotated[str, typer.Option(help="owner, member or viewer.")] = "member",
+) -> None:
+    """Create a workspace API key. It is printed once."""
+    from benchtrace.auth import AuthError, create_api_key, ensure_workspace
+
+    with session_scope() as session:
+        ws_id = ensure_workspace(session, workspace).id
+    try:
+        token = create_api_key(ws_id, name, role, created_by="admin-cli")
+    except AuthError as ex:
+        _fail(str(ex))
+    print(token)
+    err.print("Store this key now; it cannot be shown again.")
+
+
+@admin_app.command("set-secret")
+def admin_set_secret(
+    name: str,
+    workspace: Annotated[str | None, typer.Option(help="Workspace name; omit for local mode.")] = None,
+) -> None:
+    """Store an encrypted secret (e.g. OPENAI_API_KEY) for a workspace's runs and imports. Prompts for the value."""
+    from benchtrace.auth import AuthError, ensure_workspace, set_secret
+
+    value = typer.prompt(f"Value for {name}", hide_input=True)
+    ws_id = None
+    if workspace:
+        with session_scope() as session:
+            ws_id = ensure_workspace(session, workspace).id
+    try:
+        set_secret(ws_id, name, value)
+    except AuthError as ex:
+        _fail(str(ex))
+    console.print(f"Stored {name}.")
+
+
 @app.command()
 def serve(
     host: Annotated[str, typer.Option(help="Bind address.")] = "127.0.0.1",
@@ -798,7 +860,7 @@ def serve(
     from benchtrace.server import create_app
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
-    if host not in ("127.0.0.1", "localhost", "::1") and not os.environ.get("BENCHTRACE_AUTH"):
+    if host not in ("127.0.0.1", "localhost", "::1") and os.environ.get("BENCHTRACE_AUTH") != "1":
         err.print("[yellow]Warning:[/yellow] binding beyond localhost without authentication enabled.")
     console.print(f"benchtrace on http://{host}:{port}  (workers: {workers})")
     uvicorn.run(create_app(workers=workers), host=host, port=port, log_level="warning")

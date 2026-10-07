@@ -171,6 +171,70 @@ class Quote(Base):
     approved_by: Mapped[str | None] = mapped_column(String(200))
 
 
+class Workspace(Base):
+    __tablename__ = "workspaces"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("ws"))
+    name: Mapped[str] = mapped_column(String(200), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("usr"))
+    email: Mapped[str] = mapped_column(String(320), unique=True)
+    password_hash: Mapped[str] = mapped_column(String(300))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class Membership(Base):
+    __tablename__ = "memberships"
+    __table_args__ = (Index("ix_memberships_user_ws", "user_id", "workspace_id", unique=True),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"))
+    role: Mapped[str] = mapped_column(String(10), default="member")  # owner | member | viewer
+
+
+class ApiKey(Base):
+    __tablename__ = "api_keys"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("key"))
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(200))
+    prefix: Mapped[str] = mapped_column(String(12))
+    key_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    role: Mapped[str] = mapped_column(String(10), default="member")
+    created_by: Mapped[str | None] = mapped_column(String(320))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class UserSession(Base):
+    __tablename__ = "user_sessions"
+
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class Secret(Base):
+    """Encrypted provider or import credential, exposed only to its workspace's runs and imports."""
+
+    __tablename__ = "secrets"
+    __table_args__ = (Index("ix_secrets_ws_name", "workspace_id", "name", unique=True),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    workspace_id: Mapped[str | None] = mapped_column(String(32))
+    name: Mapped[str] = mapped_column(String(100))
+    ciphertext: Mapped[str] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 class ImportRun(Base):
     """One import of traces from an external tool or file."""
 
@@ -284,7 +348,9 @@ def _engine(url: str) -> Engine:
         event.listen(engine, "connect", _sqlite_pragmas)
     else:
         engine = create_engine(url, pool_pre_ping=True)
-    Base.metadata.create_all(engine)
+    from benchtrace.migrate import upgrade
+
+    upgrade(engine)
     return engine
 
 

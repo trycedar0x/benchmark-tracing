@@ -100,6 +100,26 @@ uv run benchtrace dataset export <dataset> -o tasks.jsonl       # approved items
 
 Importing requires declaring your usage rights. Re-importing a trace replaces it instead of duplicating it. Dataset items start as drafts. The recorded output is kept as evidence and is never used as the reference answer automatically. An item can only be approved once a reviewer has set a reference answer, assigned a dev or held-out test split, and confirmed usage rights. The same flow is in the web UI under Imports and Datasets.
 
+## Teams: authentication and workspaces
+
+Authentication is off by default (single-user local mode, bound to localhost). For a shared server:
+
+```bash
+export BENCHTRACE_AUTH=1 BENCHTRACE_SECRET_KEY="$(openssl rand -hex 32)"
+uv run benchtrace admin create-user you@example.com --workspace main      # prompts for a password
+uv run benchtrace admin create-key --workspace main --name ci             # prints a bt_... key once
+uv run benchtrace admin set-secret OPENAI_API_KEY --workspace main        # encrypted provider key
+uv run benchtrace serve --host 0.0.0.0
+```
+
+- Every run, trace, quote, import and dataset belongs to one workspace. Members only see their own workspaces.
+- Roles: owners manage secrets, members create runs and keys, and viewers are read-only.
+- The browser uses an HttpOnly session cookie. Scripts, the SDK and OTLP exporters send `Authorization: Bearer bt_...`. Only key hashes are stored.
+- Provider keys and import credentials are stored encrypted (Fernet, keyed from `BENCHTRACE_SECRET_KEY`). They are passed only to that workspace's run processes and imports, and are never returned by the API.
+- Put TLS in front of the server before exposing it beyond your machine.
+
+The database schema is managed with Alembic migrations, applied automatically on startup.
+
 ## Commands
 
 | Command | What it does |
@@ -115,6 +135,7 @@ Importing requires declaring your usage rights. Re-importing a trace replaces it
 | `diff A B SAMPLE` | Where the two runs' trajectories for one sample diverged |
 | `cancel RUN` | Stop a running run gracefully |
 | `import SOURCE`, `dataset ...` | Import traces; draft, review and export datasets |
+| `admin ...` | Create users, workspaces, API keys and encrypted secrets |
 | `serve`, `worker` | Start the API and web UI; run queued jobs in a separate process |
 | `export RUN` | JSON export, or `--format eee` for [Every Eval Ever](https://github.com/evaleval/every_eval_ever) (needs `--extra eee`; real providers only) |
 
@@ -130,14 +151,16 @@ State lives in `~/.benchtrace` (override with `BENCHTRACE_HOME`): a SQLite datab
 
 ## Status
 
-Early. The CLI, API server, job queue, web UI, trace diff, OTLP ingest, SDK, imports and dataset drafts work. In progress: workspaces and authentication.
+Early but complete for its first scope: CLI, API server and job queue, web UI, traces and trace diff, OTLP ingest and SDK, imports and dataset drafts, Harbor agent benchmarks, and workspaces with authentication. Not yet: remote execution backends (Modal, Daytona, Kubernetes), custom HTTPS scorers, and configuration tuning.
 
 ## Development
 
 ```bash
-uv sync --extra benchmarks
-uv run pytest
+uv sync --all-extras
+uv run pytest                                   # SQLite
+BENCHTRACE_TEST_POSTGRES=postgresql+psycopg://postgres:pw@localhost/postgres uv run pytest   # Postgres
 uv run ruff check src tests
+npm --prefix web ci && npm --prefix web run build
 ```
 
 ## License

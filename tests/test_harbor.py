@@ -91,9 +91,15 @@ def docker_ready() -> bool:
         return False
 
 
-@pytest.mark.skipif(not docker_ready(), reason="needs Docker")
+def harbor_installed() -> bool:
+    import sys
+    from pathlib import Path
+
+    return shutil.which("harbor", path=str(Path(sys.executable).parent)) is not None
+
+
+@pytest.mark.skipif(not (docker_ready() and harbor_installed()), reason="needs Docker and the harbor extra")
 def test_harbor_smoke_oracle_vs_nop():
-    pytest.importorskip("harbor")
     from benchtrace.catalog import get_benchmark
     from benchtrace.compare import compare_runs
     from benchtrace.execution import execute_run
@@ -107,8 +113,8 @@ def test_harbor_smoke_oracle_vs_nop():
     assert result.compatibility.comparable and result.discordant["regressions"] == 2
 
 
+@pytest.mark.skipif(not harbor_installed(), reason="needs the harbor extra")
 def test_harbor_command_for_registry_dataset(tmp_path):
-    pytest.importorskip("harbor")
     cmd = harbor_command("swe-bench/swe-bench-verified", "mini-swe-agent", "openai/gpt-4o", tmp_path, 10, 1)
     assert cmd[1:4] == ["run", "-d", "swe-bench/swe-bench-verified"]
     assert ["-m", "openai/gpt-4o"] == cmd[cmd.index("-m") : cmd.index("-m") + 2] and "-l" in cmd

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import signal
 import subprocess
 import sys
@@ -21,7 +22,9 @@ def execute_run(run_id: str, on_progress: Callable[[Run], None] | None = None, p
     run_dir.mkdir(parents=True, exist_ok=True)
     child_log = run_dir / "child.log"
     with child_log.open("ab") as out:
-        proc = subprocess.Popen([sys.executable, "-m", "benchtrace.child", run_id], stdout=out, stderr=out)
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "benchtrace.child", run_id], stdout=out, stderr=out, env=_child_env(run_id)
+        )
         cancel_sent_at: float | None = None
         while True:
             exited = proc.poll() is not None
@@ -47,6 +50,15 @@ def execute_run(run_id: str, on_progress: Callable[[Run], None] | None = None, p
             run.finished_at = now()
             run.error = f"Run process exited with code {proc.returncode}.\n{tail}"
     return run
+
+
+def _child_env(run_id: str) -> dict[str, str]:
+    """The run's process sees its own workspace's secrets (provider keys) on top of the server environment."""
+    from benchtrace.auth import secrets_for
+
+    with session_scope() as session:
+        workspace_id = session.get(Run, run_id).workspace_id
+    return {**os.environ, **secrets_for(workspace_id)}
 
 
 def request_cancel(run_id: str) -> Run:

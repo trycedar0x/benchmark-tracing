@@ -16,6 +16,7 @@ Credentials come from the server's environment:
 from __future__ import annotations
 
 import base64
+import contextvars
 import hashlib
 import json
 import os
@@ -77,8 +78,15 @@ def _text(value: Any) -> Any:
     return value if value is None or isinstance(value, str) else json.loads(json.dumps(value, default=str))
 
 
+_SECRETS: contextvars.ContextVar[dict[str, str] | None] = contextvars.ContextVar("import_secrets", default=None)
+
+
+def _secret(name: str) -> str | None:
+    return (_SECRETS.get() or {}).get(name)
+
+
 def _env(name: str) -> str:
-    value = os.environ.get(name)
+    value = _secret(name) or os.environ.get(name)
     if not value:
         raise ImportError_(f"Set {name} on the server to import from this source.")
     return value
@@ -101,7 +109,7 @@ LANGFUSE_KINDS = {
 
 
 def langfuse_traces(project: str | None, max_traces: int, fetch: Fetch) -> Iterator[tuple[str, list[dict]]]:
-    host = os.environ.get("LANGFUSE_HOST", "https://cloud.langfuse.com").rstrip("/")
+    host = (_secret("LANGFUSE_HOST") or os.environ.get("LANGFUSE_HOST", "https://cloud.langfuse.com")).rstrip("/")
     token = base64.b64encode(f"{_env('LANGFUSE_PUBLIC_KEY')}:{_env('LANGFUSE_SECRET_KEY')}".encode()).decode()
     headers = {"Authorization": f"Basic {token}"}
     page, seen = 1, 0
@@ -206,7 +214,9 @@ LANGSMITH_KINDS = {
 def langsmith_traces(project: str | None, max_traces: int, fetch: Fetch) -> Iterator[tuple[str, list[dict]]]:
     if not project:
         raise ImportError_("Give the LangSmith project name.")
-    host = os.environ.get("LANGSMITH_ENDPOINT", "https://api.smith.langchain.com").rstrip("/")
+    host = (
+        _secret("LANGSMITH_ENDPOINT") or os.environ.get("LANGSMITH_ENDPOINT", "https://api.smith.langchain.com")
+    ).rstrip("/")
     headers = {"x-api-key": _env("LANGSMITH_API_KEY")}
     sessions = fetch("GET", f"{host}/api/v1/sessions?{urllib.parse.urlencode({'name': project})}", headers, None)
     if not sessions:
@@ -289,7 +299,9 @@ BRAINTRUST_KINDS = {
 def braintrust_traces(project: str | None, max_traces: int, fetch: Fetch) -> Iterator[tuple[str, list[dict]]]:
     if not project:
         raise ImportError_("Give the Braintrust project name or id.")
-    host = os.environ.get("BRAINTRUST_API_URL", "https://api.braintrust.dev").rstrip("/")
+    host = (_secret("BRAINTRUST_API_URL") or os.environ.get("BRAINTRUST_API_URL", "https://api.braintrust.dev")).rstrip(
+        "/"
+    )
     headers = {"Authorization": f"Bearer {_env('BRAINTRUST_API_KEY')}"}
     project_id = project
     if len(project) != 36:  # not a UUID: look up by name
@@ -421,6 +433,9 @@ def execute_import(import_id: str, fetch: Fetch = http_fetch) -> ImportRun:
         policy, workspace_id, rights = run.content_policy, run.workspace_id, run.usage_rights
     traces = spans = 0
     try:
+        from benchtrace.auth import secrets_for
+
+        _SECRETS.set(secrets_for(workspace_id))
         if source in IMPORTERS:
             for ref, items in IMPORTERS[source](project, int(options.get("max_traces", 100)), fetch):
                 with session_scope() as session:
