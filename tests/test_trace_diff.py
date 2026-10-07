@@ -43,3 +43,34 @@ def test_error_trace_shows_missing_steps():
         result = diff_traces(session, rows[0].a_trace_id, rows[0].b_trace_id)
     ops = {p.op for p in result.pairs}
     assert "only_b" in ops and any((p.b and p.b.kind == "error") for p in result.pairs)
+
+
+def test_sdk_and_otlp_content_keys_feed_summaries_and_previews():
+    from benchtrace.cli import _span_label
+    from benchtrace.db import Span
+    from benchtrace.trace_diff import _output, _summary
+
+    sdk_model = Span(
+        kind="model",
+        name="chat",
+        content={
+            "benchtrace.content.output": "The answer is 4",
+            "benchtrace.content.tool_calls": '[{"function": "calc", "arguments": {"expression": "2+2"}}]',
+        },
+    )
+    sdk_tool = Span(
+        kind="tool",
+        name="calc",
+        content={"benchtrace.content.arguments": '{"expression": "2+2"}', "benchtrace.content.result": "4"},
+    )
+    otlp_model = Span(kind="model", name="llm", content={"output.value": "Paris"})
+    otlp_tool = Span(kind="tool", name="search", content={"input.value": "capital of France", "output.value": "Paris"})
+
+    assert _summary(sdk_model).startswith("calls calc(")
+    assert _output(sdk_model)["output"] == "The answer is 4"
+    assert _summary(sdk_tool) == '{"expression": "2+2"} → 4'
+    assert _output(otlp_tool) == {"arguments": "capital of France", "result": "Paris", "error": None}
+    assert _summary(otlp_model) == "Paris"
+    assert "“The answer is 4”" in _span_label(sdk_model)
+    assert "“4”" in _span_label(sdk_tool)
+    assert "“Paris”" in _span_label(otlp_model)
