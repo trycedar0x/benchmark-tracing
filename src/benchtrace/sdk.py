@@ -4,7 +4,7 @@
 
     bt = Benchtrace(endpoint="http://127.0.0.1:8321")
     with bt.trace("answer-question", task_id="q-17"):
-        with bt.span("call-model", kind="model", model="gpt-4o-mini") as span:
+        with bt.span("call-model", kind="model", **{"gen_ai.request.model": "gpt-4o-mini"}) as span:
             ...
     receipt = bt.flush()
 
@@ -260,19 +260,26 @@ class Benchtrace:
 
     @contextmanager
     def trace(self, name: str, **attributes: Any) -> Iterator[otel_trace.Span]:
-        """Root span for one task. On exit the trace is sealed with its span count."""
-        with self.tracer.start_as_current_span(
-            name,
-            attributes={"benchtrace.span.kind": "agent", **attributes},
-            context=otel_trace.set_span_in_context(otel_trace.INVALID_SPAN),
-        ) as span:
-            trace_id = format(span.get_span_context().trace_id, "032x")
-            try:
-                yield span
-            except BaseException as ex:
-                span.record_exception(ex)
-                span.set_status(otel_trace.Status(otel_trace.StatusCode.ERROR, str(ex)))
-                raise
+        """Root span for one task. On exit, including by an exception, the trace is sealed with its span count."""
+        trace_id = None
+        try:
+            with self.tracer.start_as_current_span(
+                name,
+                attributes={"benchtrace.span.kind": "agent", **attributes},
+                context=otel_trace.set_span_in_context(otel_trace.INVALID_SPAN),
+            ) as span:
+                trace_id = format(span.get_span_context().trace_id, "032x")
+                try:
+                    yield span
+                except BaseException as ex:
+                    span.record_exception(ex)
+                    span.set_status(otel_trace.Status(otel_trace.StatusCode.ERROR, str(ex)))
+                    raise
+        finally:
+            if trace_id is not None:
+                self._seal(trace_id)
+
+    def _seal(self, trace_id: str) -> None:
         self.processor.force_flush()
         expected = self.counter.pop(trace_id)
         self.spool.write(json.dumps({"trace_id": trace_id, "expected_spans": expected}).encode(), ".seal")
