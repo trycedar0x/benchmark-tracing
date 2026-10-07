@@ -21,7 +21,7 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U postgres" --health-interval 2s --health-retries 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v6
       - run: uv sync --all-extras
       - run: uv run ruff check src tests
@@ -33,11 +33,13 @@ jobs:
   web:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
       - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: false
       - run: npm --prefix web ci
       - run: npm --prefix web run build
       - run: uv sync --extra benchmarks
@@ -46,5 +48,8 @@ jobs:
         run: |
           export BENCHTRACE_HOME=$RUNNER_TEMP/bt
           uv run benchtrace serve --port 8321 &
+          server=$!
           for i in $(seq 1 60); do curl -sf localhost:8321/api/health && break; sleep 1; done
-          cd web && npx playwright test --reporter=line
+          (cd web && npx playwright test --reporter=line); status=$?
+          kill $server
+          exit $status

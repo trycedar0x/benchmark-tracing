@@ -131,12 +131,13 @@ def test_spans_survive_a_crash_and_are_delivered_later(tmp_path):
 
 
 def test_retried_batch_is_not_stored_twice(server, tmp_path):
-    bt = client(server.url, tmp_path)
-    trace_id = emit(bt)
-    bt.processor.force_flush()
+    # Spool against an unreachable endpoint so the batch stays on disk, then deliver it twice by hand.
+    offline = client("http://127.0.0.1:9", tmp_path)
+    trace_id = emit(offline)
+    offline.processor.force_flush()
     batch = next((tmp_path / "spool").rglob("*.otlp"))
     data, batch_id = batch.read_bytes(), batch.name.split(".")[0]
-    bt.close(timeout=10)
+    offline.close(timeout=0.5)
 
     def post():
         req = urllib.request.Request(
@@ -148,6 +149,7 @@ def test_retried_batch_is_not_stored_twice(server, tmp_path):
         with urllib.request.urlopen(req) as resp:
             return resp.headers["x-benchtrace-duplicate"]
 
+    assert post() == "false"
     assert post() == "true"
     _, spans = stored(trace_id)
     assert len(spans) == 3
