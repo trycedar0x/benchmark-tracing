@@ -1,7 +1,11 @@
 import { Activity } from 'lucide-react'
 import { NavLink, Route, Routes } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
+import { Toaster } from '@/components/ui/sonner'
 import CatalogPage from './pages/Catalog'
+import DatasetPage from './pages/Dataset'
+import DatasetsPage from './pages/Datasets'
+import ImportsPage from './pages/Imports'
 import ComparePage from './pages/Compare'
 import NewRunPage from './pages/NewRun'
 import RunPage from './pages/Run'
@@ -15,6 +19,8 @@ const links = [
   { to: '/new', label: 'New run' },
   { to: '/compare', label: 'Compare' },
   { to: '/traces', label: 'Traces' },
+  { to: '/datasets', label: 'Datasets' },
+  { to: '/imports', label: 'Imports' },
   { to: '/catalog', label: 'Catalog' },
 ]
 
@@ -50,9 +56,13 @@ export default function App() {
           <Route path="/compare" element={<ComparePage />} />
           <Route path="/diff" element={<TraceDiffPage />} />
           <Route path="/catalog" element={<CatalogPage />} />
+          <Route path="/datasets" element={<DatasetsPage />} />
+          <Route path="/datasets/:datasetId" element={<DatasetPage />} />
+          <Route path="/imports" element={<ImportsPage />} />
           <Route path="*" element={<p className="text-muted-foreground">Page not found.</p>} />
         </Routes>
       </main>
+      <Toaster />
     </div>
   )
 }

@@ -37,9 +37,26 @@ test('core pages render without errors', async ({ page, request }) => {
   const traceId = [...crypto.getRandomValues(new Uint8Array(16))].map((x) => x.toString(16).padStart(2, '0')).join('')
   await request.post('/v1/traces', {
     headers: { 'Content-Type': 'application/json', 'x-benchtrace-source': 'sdk' },
-    data: { resourceSpans: [{ scopeSpans: [{ spans: [{ traceId, spanId: '0011223344556677', name: 'my-agent-task',
-      startTimeUnixNano: '1700000000000000000', endTimeUnixNano: '1700000002000000000',
-      attributes: [{ key: 'openinference.span.kind', value: { stringValue: 'AGENT' } }] }] }] }] },
+    data: {
+      resourceSpans: [
+        {
+          scopeSpans: [
+            {
+              spans: [
+                {
+                  traceId,
+                  spanId: '0011223344556677',
+                  name: 'my-agent-task',
+                  startTimeUnixNano: '1700000000000000000',
+                  endTimeUnixNano: '1700000002000000000',
+                  attributes: [{ key: 'openinference.span.kind', value: { stringValue: 'AGENT' } }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
   })
   await visit(page, '/traces', 'traces', /my-agent-task/)
   await visit(page, `/traces/${traceId}`, 'sdk-trace', /my-agent-task/)
@@ -53,4 +70,30 @@ test('quote, approve and run from the UI', async ({ page }) => {
   await page.getByRole('button', { name: 'Approve and run' }).click()
   await expect(page).toHaveURL(/\/$/)
   await expect(page.getByText('btmock/weak').first()).toBeVisible()
+})
+
+test('draft, review and approve dataset items from run failures', async ({ page, request }) => {
+  const [run] = await (
+    await request.post('/api/runs', { data: { benchmark: 'toy-arith', models: ['btmock/weak'], limit: 12 } })
+  ).json()
+  await expect
+    .poll(async () => (await (await request.get(`/api/runs/${run.id}`)).json()).status, { timeout: 60_000 })
+    .toBe('succeeded')
+  await page.goto(`/runs/${run.id}`)
+  await page.getByRole('button', { name: 'Add failures to dataset' }).click()
+  await page.locator('#dataset-name').fill(`misses ${run.id}`)
+  await page.getByRole('button', { name: 'Add drafts' }).click()
+  await expect(page.getByText(/draft item/)).toBeVisible()
+
+  await page.goto('/datasets')
+  await page.getByRole('link', { name: `misses ${run.id}` }).click()
+  await page.getByRole('button', { name: /Use benchmark target/ }).first().click()
+  await page.getByRole('button', { name: 'Approve' }).first().click()
+  await expect(page.getByText(/Cannot approve: no split/)).toBeVisible()
+  await page.getByRole('combobox', { name: 'Split' }).first().click()
+  await page.getByRole('option', { name: 'Held-out test' }).click()
+  await page.getByRole('button', { name: 'Approve' }).first().click()
+  await expect(page.getByText(/: approved/)).toBeVisible()
+  if (process.env.SHOTS_DIR) await page.screenshot({ path: `${process.env.SHOTS_DIR}/dataset.png`, fullPage: true })
+  await expect(page.getByRole('link', { name: 'Export JSONL' })).toBeVisible()
 })

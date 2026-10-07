@@ -24,7 +24,9 @@ function StepOutput({ step, label }: { step: DiffStep | null; label: string }) {
       {step && (
         <CardContent>
           {/* Untrusted model and tool output: rendered as text only. */}
-          <pre className="whitespace-pre-wrap break-words font-mono text-xs">{JSON.stringify(step.output, null, 2)}</pre>
+          <pre className="whitespace-pre-wrap break-words font-mono text-xs">
+            {JSON.stringify(step.output, null, 2)}
+          </pre>
         </CardContent>
       )}
     </Card>

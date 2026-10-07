@@ -1,20 +1,34 @@
 import { useQuery } from '@tanstack/react-query'
 import { Waypoints } from 'lucide-react'
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ago, duration, errorMessage } from '@/lib/format'
 import { api } from '../api'
 
-const SOURCES = ['all', 'sdk', 'otlp', 'inspect']
+const SOURCES = [
+  'all',
+  'sdk',
+  'otlp',
+  'inspect',
+  'import:langfuse',
+  'import:langsmith',
+  'import:braintrust',
+  'import:otlp_file',
+]
 
 export default function TracesPage() {
-  const [source, setSource] = useState('sdk')
+  const [params, setParams] = useSearchParams()
+  const [source, setSourceState] = useState(params.get('source') ?? 'all')
+  const setSource = (v: string) => {
+    setSourceState(v)
+    setParams(v === 'all' ? {} : { source: v })
+  }
   const traces = useQuery({
     queryKey: ['traces', source],
     queryFn: () => api.traces(source === 'all' ? {} : { source }),
@@ -30,13 +44,18 @@ export default function TracesPage() {
             Traces from your own agents (SDK or any OTLP exporter) and from benchmark runs.
           </p>
         </div>
-        <ToggleGroup type="single" variant="outline" size="sm" value={source} onValueChange={(v) => v && setSource(v)}>
-          {SOURCES.map((s) => (
-            <ToggleGroupItem key={s} value={s}>
-              {s}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
+        <Select value={source} onValueChange={setSource}>
+          <SelectTrigger aria-label="Source" className="w-48">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {SOURCES.map((s) => (
+              <SelectItem key={s} value={s}>
+                {s === 'all' ? 'All sources' : s}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
       {traces.error && (
         <Alert variant="destructive">
@@ -84,7 +103,11 @@ export default function TracesPage() {
                       <Badge variant="outline">{t.source}</Badge>
                     </TableCell>
                     <TableCell>
-                      <Badge variant={t.state === 'incomplete' ? 'destructive' : t.state === 'closed' ? 'secondary' : 'outline'}>
+                      <Badge
+                        variant={
+                          t.state === 'incomplete' ? 'destructive' : t.state === 'closed' ? 'secondary' : 'outline'
+                        }
+                      >
                         {t.state}
                       </Badge>
                     </TableCell>

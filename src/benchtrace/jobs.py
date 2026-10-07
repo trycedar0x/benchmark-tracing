@@ -87,6 +87,13 @@ def recover_stale() -> int:
                     run.status = "failed"
                     run.error = f"Worker {job.worker} stopped responding; partial results kept."
                     run.finished_at = now()
+            elif job.kind == "import":
+                from benchtrace.db import ImportRun
+
+                imp = session.get(ImportRun, job.target_id)
+                if imp and imp.status in ("queued", "running"):
+                    imp.status = "failed"
+                    imp.error = f"Worker {job.worker} stopped responding."
             elif job.kind == "quote":
                 quote = session.get(Quote, job.target_id)
                 if quote and quote.status == "estimating":
@@ -109,6 +116,10 @@ def process(job: Job) -> None:
                 if quote:
                     quote.status = "failed"
             raise
+    elif job.kind == "import":
+        from benchtrace.imports import execute_import
+
+        execute_import(job.target_id)
     else:
         raise ValueError(f"Unknown job kind {job.kind!r}")
 

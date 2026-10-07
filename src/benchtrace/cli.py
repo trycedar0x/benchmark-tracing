@@ -627,6 +627,163 @@ def export(
     console.print(f"Wrote Every Eval Ever files to {out}/")
 
 
+# ---------------------------------------------------------------------------- imports and datasets
+
+import_app = typer.Typer(
+    help="Import traces from Langfuse, LangSmith, Braintrust, OTLP files or Inspect logs.", no_args_is_help=True
+)
+app.add_typer(import_app, name="import")
+RightsOpt = Annotated[str, typer.Option("--rights", help="Your right to use this data: own_data, licensed or unknown.")]
+ContentOpt = Annotated[str, typer.Option("--content", help="Content policy: full, redacted or metadata.")]
+
+
+def _run_import(source: str, project: str | None, rights: str, content: str, options: dict[str, Any]) -> None:
+    from benchtrace.imports import create_import, execute_import
+
+    try:
+        record = create_import(source, project=project, usage_rights=rights, content_policy=content, options=options)
+    except ValueError as ex:
+        _fail(str(ex))
+    with console.status(f"Importing from {source}..."):
+        result = execute_import(record.id)
+    if result.status != "succeeded":
+        _fail(f"Import {result.id} failed: {result.error}")
+    console.print(f"Imported {result.traces_imported} trace(s), {result.spans_imported} span(s) ({result.id}).")
+
+
+def _api_import(source: str):
+    def command(
+        project: Annotated[str | None, typer.Option(help="Project name (or id for Braintrust).")] = None,
+        max_traces: Annotated[int, typer.Option(help="Most recent traces to import.")] = 100,
+        rights: RightsOpt = "unknown",
+        content: ContentOpt = "redacted",
+    ) -> None:
+        _run_import(source, project, rights, content, {"max_traces": max_traces})
+
+    label = {"langfuse": "Langfuse", "langsmith": "LangSmith", "braintrust": "Braintrust"}[source]
+    command.__doc__ = f"Import traces from {label} (credentials from environment variables)."
+    return command
+
+
+for _source in ("langfuse", "langsmith", "braintrust"):
+    import_app.command(_source)(_api_import(_source))
+
+
+@import_app.command("otlp")
+def import_otlp(path: Path, rights: RightsOpt = "unknown", content: ContentOpt = "redacted") -> None:
+    """Import an OTLP/JSON file (one request, or one per line)."""
+    _run_import("otlp_file", None, rights, content, {"path": str(path.resolve())})
+
+
+@import_app.command("inspect-log")
+def import_inspect_log(path: Path, rights: RightsOpt = "unknown", content: ContentOpt = "full") -> None:
+    """Import an existing Inspect AI log as a run, with results and traces."""
+    _run_import("inspect_log", None, rights, content, {"path": str(path.resolve())})
+
+
+dataset_app = typer.Typer(help="Draft and review datasets from traces.", no_args_is_help=True)
+app.add_typer(dataset_app, name="dataset")
+
+
+@dataset_app.command("create")
+def dataset_create(name: str, description: Annotated[str | None, typer.Option()] = None) -> None:
+    """Create an empty dataset."""
+    from benchtrace.datasets import create_dataset
+
+    ds = create_dataset(name, description)
+    console.print(f"Created {ds.id}")
+
+
+@dataset_app.command("add")
+def dataset_add(
+    dataset_id: str,
+    trace: Annotated[list[str] | None, typer.Option("--trace", help="Trace id; repeat for several.")] = None,
+    run_id: Annotated[str | None, typer.Option("--run", help="Add samples from this run.")] = None,
+    outcome: Annotated[list[str] | None, typer.Option(help="Only samples with this outcome, e.g. incorrect.")] = None,
+    split: Annotated[str, typer.Option(help="unassigned, dev or test.")] = "unassigned",
+) -> None:
+    """Draft items from traces or from a run's samples."""
+    from benchtrace.datasets import ReviewError, add_run_samples, add_traces
+
+    try:
+        items = add_traces(dataset_id, trace or [], split) if trace else []
+        if run_id:
+            items += add_run_samples(dataset_id, run_id, outcome or [], split)
+    except (LookupError, ReviewError) as ex:
+        _fail(str(ex))
+    console.print(f"Added {len(items)} draft item(s). Review them before use: benchtrace dataset show {dataset_id}")
+
+
+@dataset_app.command("show")
+def dataset_show(dataset_id: str) -> None:
+    """List a dataset's items and their review status."""
+    from benchtrace.db import Dataset, DatasetItem
+
+    with session_scope() as session:
+        ds = session.get(Dataset, dataset_id)
+        if ds is None:
+            _fail(f"Dataset {dataset_id} not found")
+        items = session.scalars(select(DatasetItem).where(DatasetItem.dataset_id == dataset_id)).all()
+        table = Table(title=f"{ds.name} ({ds.id})")
+        for col in ("Item", "Status", "Split", "Rights", "Input", "Historical output", "Reference"):
+            table.add_column(col, overflow="fold")
+        for i in items:
+            table.add_row(
+                str(i.id),
+                i.status,
+                i.split,
+                i.usage_rights,
+                escape((i.input or "–")[:50]),
+                escape((i.historical_output or "–")[:40]),
+                escape((i.reference_output or "–")[:40]),
+            )
+    console.print(table)
+
+
+@dataset_app.command("review")
+def dataset_review(
+    item_id: int,
+    reference: Annotated[str | None, typer.Option(help="Reference answer.")] = None,
+    split: Annotated[str | None, typer.Option(help="dev or test.")] = None,
+    rights: Annotated[str | None, typer.Option(help="own_data, licensed or unknown.")] = None,
+    notes: Annotated[str | None, typer.Option()] = None,
+    approve: Annotated[bool, typer.Option(help="Approve the item.")] = False,
+    reject: Annotated[bool, typer.Option(help="Reject the item.")] = False,
+    by: Annotated[str, typer.Option(help="Reviewer name.")] = "cli",
+) -> None:
+    """Set an item's reference answer, split and rights, and approve or reject it."""
+    from benchtrace.datasets import ReviewError, review_item
+
+    status = "approved" if approve else "rejected" if reject else None
+    try:
+        item = review_item(
+            item_id,
+            reviewer=by,
+            reference_output=reference,
+            split=split,
+            usage_rights=rights,
+            notes=notes,
+            status=status,
+        )
+    except (LookupError, ReviewError) as ex:
+        _fail(str(ex))
+    console.print(f"Item {item.id}: {item.status}, split {item.split}, rights {item.usage_rights}")
+
+
+@dataset_app.command("export")
+def dataset_export(
+    dataset_id: str,
+    out: Annotated[Path, typer.Option("--out", "-o", help="JSONL file to write.")],
+    split: Annotated[str | None, typer.Option(help="Only this split.")] = None,
+) -> None:
+    """Export approved items as Inspect-compatible JSONL (input, target, id, metadata)."""
+    from benchtrace.datasets import export_items
+
+    rows = export_items(dataset_id, split)
+    out.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows))
+    console.print(f"Wrote {len(rows)} approved item(s) to {out}")
+
+
 @app.command()
 def serve(
     host: Annotated[str, typer.Option(help="Bind address.")] = "127.0.0.1",

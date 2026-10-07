@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import { AddToDataset } from '@/components/add-to-dataset'
 import { StatusBadge } from '@/components/status-badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -27,23 +28,26 @@ export default function TracePage() {
 
   return (
     <div className="grid gap-4">
-      <div className="min-w-0">
-        <p className="font-mono text-xs text-muted-foreground">trace {header.trace_id}</p>
-        <h1 className="flex flex-wrap items-center gap-2 text-2xl font-semibold tracking-tight">
-          {header.name ?? 'Trace'} {sample && <StatusBadge value={sample.outcome} />}
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          {header.run_id && (
-            <>
-              Run{' '}
-              <Link className="underline underline-offset-4" to={`/runs/${header.run_id}`}>
-                {header.run_id}
-              </Link>{' '}
-              ·{' '}
-            </>
-          )}
-          {header.span_count} spans · source {header.source}
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="font-mono text-xs text-muted-foreground">trace {header.trace_id}</p>
+          <h1 className="flex flex-wrap items-center gap-2 text-2xl font-semibold tracking-tight">
+            {header.name ?? 'Trace'} {sample && <StatusBadge value={sample.outcome} />}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {header.run_id && (
+              <>
+                Run{' '}
+                <Link className="underline underline-offset-4" to={`/runs/${header.run_id}`}>
+                  {header.run_id}
+                </Link>{' '}
+                ·{' '}
+              </>
+            )}
+            {header.span_count} spans · source {header.source}
+          </p>
+        </div>
+        <AddToDataset traceIds={[header.trace_id]} />
       </div>
       {sample && (
         <Card>

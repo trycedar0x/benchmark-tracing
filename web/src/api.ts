@@ -170,6 +170,40 @@ export type TraceDiff = {
   summary: string
 }
 
+export type ImportRun = {
+  id: string
+  created_at: string
+  finished_at: string | null
+  source: string
+  project: string | null
+  usage_rights: string
+  content_policy: string
+  status: string
+  traces_imported: number
+  spans_imported: number
+  error: string | null
+}
+
+export type Dataset = { id: string; name: string; description: string | null; created_at: string; counts?: Record<string, number> }
+
+export type DatasetItem = {
+  id: number
+  dataset_id: string
+  source_trace_id: string
+  source: string
+  input: string | null
+  historical_output: string | null
+  historical_score: number | null
+  reference_output: string | null
+  split: string
+  status: string
+  usage_rights: string
+  provenance: Record<string, unknown>
+  notes: string | null
+  reviewed_at: string | null
+  reviewed_by: string | null
+}
+
 export class ApiError extends Error {
   status: number
   constructor(status: number, message: string) {
@@ -214,6 +248,17 @@ export const api = {
   compare: (a: string, b: string, force = false) =>
     request<Comparison>(`/api/compare?${new URLSearchParams({ a, b, force: String(force) })}`),
   trace: (id: string) => request<TraceDetail>(`/api/traces/${id}`),
+  imports: () => request<ImportRun[]>('/api/imports'),
+  startImport: (body: Record<string, unknown>) =>
+    request<ImportRun>('/api/imports', { method: 'POST', body: JSON.stringify(body) }),
+  datasets: () => request<Dataset[]>('/api/datasets'),
+  dataset: (id: string) => request<Dataset & { items: DatasetItem[] }>(`/api/datasets/${id}`),
+  createDataset: (body: Record<string, unknown>) =>
+    request<Dataset>('/api/datasets', { method: 'POST', body: JSON.stringify(body) }),
+  addItems: (id: string, body: Record<string, unknown>) =>
+    request<DatasetItem[]>(`/api/datasets/${id}/items`, { method: 'POST', body: JSON.stringify(body) }),
+  reviewItem: (id: string, itemId: number, body: Record<string, unknown>) =>
+    request<DatasetItem>(`/api/datasets/${id}/items/${itemId}`, { method: 'PATCH', body: JSON.stringify(body) }),
   traceDiff: (a: string, b: string) => request<TraceDiff>(`/api/trace-diff?${new URLSearchParams({ a, b })}`),
   traces: (params: Record<string, string> = {}) =>
     request<TraceHeader[]>(`/api/traces?${new URLSearchParams(params)}`),

@@ -68,6 +68,26 @@ Delivery is crash-safe. The content policy is applied before anything touches di
 
 The server stores ingested content according to `BENCHTRACE_INGEST_CONTENT` (default `metadata`). A client can ask for a stricter policy than the server's, but not a looser one.
 
+## Imports and datasets
+
+Import production traces from other tools, then turn interesting ones into reviewed evaluation tasks.
+
+```bash
+export LANGFUSE_PUBLIC_KEY=... LANGFUSE_SECRET_KEY=...           # or LANGSMITH_API_KEY, BRAINTRUST_API_KEY
+uv run benchtrace import langfuse --max-traces 200 --rights own_data
+uv run benchtrace import langsmith --project support-bot --rights own_data
+uv run benchtrace import braintrust --project support-bot --rights own_data
+uv run benchtrace import otlp spans.jsonl --rights own_data      # OTLP/JSON files
+uv run benchtrace import inspect-log run.eval                   # an existing Inspect log becomes a run
+
+uv run benchtrace dataset create "support failures"
+uv run benchtrace dataset add <dataset> --run <run> --outcome incorrect --split dev
+uv run benchtrace dataset review <item> --reference "..." --split test --approve
+uv run benchtrace dataset export <dataset> -o tasks.jsonl       # approved items only, Inspect-compatible
+```
+
+Importing requires declaring your usage rights. Re-importing a trace replaces it instead of duplicating it. Dataset items start as drafts. The recorded output is kept as evidence and is never used as the reference answer automatically. An item can only be approved once a reviewer has set a reference answer, assigned a dev or held-out test split, and confirmed usage rights. The same flow is in the web UI under Imports and Datasets.
+
 ## Commands
 
 | Command | What it does |
@@ -82,6 +102,7 @@ The server stores ingested content according to `BENCHTRACE_INGEST_CONTENT` (def
 | `compare A B` | Paired comparison; `--json` for every row |
 | `diff A B SAMPLE` | Where the two runs' trajectories for one sample diverged |
 | `cancel RUN` | Stop a running run gracefully |
+| `import SOURCE`, `dataset ...` | Import traces; draft, review and export datasets |
 | `serve`, `worker` | Start the API and web UI; run queued jobs in a separate process |
 | `export RUN` | JSON export, or `--format eee` for [Every Eval Ever](https://github.com/evaleval/every_eval_ever) (needs `--extra eee`; real providers only) |
 
@@ -97,7 +118,7 @@ State lives in `~/.benchtrace` (override with `BENCHTRACE_HOME`): a SQLite datab
 
 ## Status
 
-Early. The CLI, API server, job queue, web UI, trace diff, OTLP ingest and SDK work. In progress: imports from Langfuse, LangSmith and Braintrust, workspaces and authentication, and a Harbor adapter for agent benchmarks.
+Early. The CLI, API server, job queue, web UI, trace diff, OTLP ingest, SDK, imports and dataset drafts work. In progress: workspaces and authentication, and a Harbor adapter for agent benchmarks.
 
 ## Development
 

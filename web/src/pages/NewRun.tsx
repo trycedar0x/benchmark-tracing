@@ -196,8 +196,8 @@ export default function NewRunPage() {
               )}
             </div>
             <p className="text-sm text-muted-foreground">
-              A quote runs 5 samples per model and extrapolates tokens and cost. With paid models that sample is
-              billed. Paid models need an approved quote.
+              A quote runs 5 samples per model and extrapolates tokens and cost. With paid models that sample is billed.
+              Paid models need an approved quote.
             </p>
           </CardFooter>
         </Card>

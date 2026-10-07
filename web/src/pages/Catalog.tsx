@@ -51,13 +51,11 @@ export default function CatalogPage() {
                   <TableCell className="max-w-xs whitespace-normal">{e.grader}</TableCell>
                   <TableCell>
                     <div className="flex flex-wrap gap-1">
-                      {[...e.requires, ...(e.sandbox ? ['docker'] : []), ...(e.offline ? ['offline'] : [])].map(
-                        (n) => (
-                          <Badge key={n} variant="outline">
-                            {n}
-                          </Badge>
-                        ),
-                      )}
+                      {[...e.requires, ...(e.sandbox ? ['docker'] : []), ...(e.offline ? ['offline'] : [])].map((n) => (
+                        <Badge key={n} variant="outline">
+                          {n}
+                        </Badge>
+                      ))}
                     </div>
                   </TableCell>
                   <TableCell className="pr-6 text-xs">{e.license ?? '–'}</TableCell>

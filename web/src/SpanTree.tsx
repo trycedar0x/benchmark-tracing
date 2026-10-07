@@ -96,10 +96,22 @@ export function SpanTree({
               if (n.children.length) toggle(n.span_id)
             }}
           >
-            {n.children.length ? collapsed.has(n.span_id) ? <ChevronRight className="size-3.5" /> : <ChevronDown className="size-3.5" /> : null}
+            {n.children.length ? (
+              collapsed.has(n.span_id) ? (
+                <ChevronRight className="size-3.5" />
+              ) : (
+                <ChevronDown className="size-3.5" />
+              )
+            ) : null}
           </button>
           <Badge
-            variant={n.status === 'error' || n.kind === 'error' ? 'destructive' : PROMINENT.has(n.kind) ? 'secondary' : 'outline'}
+            variant={
+              n.status === 'error' || n.kind === 'error'
+                ? 'destructive'
+                : PROMINENT.has(n.kind)
+                  ? 'secondary'
+                  : 'outline'
+            }
             className="shrink-0 font-mono"
           >
             {n.kind}

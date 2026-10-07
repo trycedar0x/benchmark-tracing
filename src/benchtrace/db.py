@@ -171,6 +171,65 @@ class Quote(Base):
     approved_by: Mapped[str | None] = mapped_column(String(200))
 
 
+class ImportRun(Base):
+    """One import of traces from an external tool or file."""
+
+    __tablename__ = "imports"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("imp"))
+    workspace_id: Mapped[str | None] = mapped_column(String(32), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    source: Mapped[str] = mapped_column(String(20))  # langfuse | langsmith | braintrust | otlp_file | inspect_log
+    project: Mapped[str | None] = mapped_column(String(300))
+    options: Mapped[dict[str, Any]] = mapped_column(default=dict)
+    # Declared by the person importing: own_data | licensed | unknown
+    usage_rights: Mapped[str] = mapped_column(String(20))
+    content_policy: Mapped[str] = mapped_column(String(20), default="redacted")
+    # queued | running | succeeded | failed
+    status: Mapped[str] = mapped_column(String(10), default="queued")
+    traces_imported: Mapped[int] = mapped_column(Integer, default=0)
+    spans_imported: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[str | None] = mapped_column(Text)
+
+
+class Dataset(Base):
+    """A reviewed set of tasks drafted from traces. Items are drafts until a person approves them."""
+
+    __tablename__ = "datasets"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("ds"))
+    workspace_id: Mapped[str | None] = mapped_column(String(32), index=True)
+    name: Mapped[str] = mapped_column(String(200))
+    description: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class DatasetItem(Base):
+    __tablename__ = "dataset_items"
+    __table_args__ = (Index("ix_dataset_items_source", "dataset_id", "source_trace_id", unique=True),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    dataset_id: Mapped[str] = mapped_column(ForeignKey("datasets.id", ondelete="CASCADE"), index=True)
+    source_trace_id: Mapped[str] = mapped_column(String(64))
+    source: Mapped[str] = mapped_column(String(40))
+    input: Mapped[str | None] = mapped_column(Text)
+    # What the system produced at the time: evidence, never a reference answer.
+    historical_output: Mapped[str | None] = mapped_column(Text)
+    historical_score: Mapped[float | None] = mapped_column(Float)
+    # Set by a reviewer; required before approval.
+    reference_output: Mapped[str | None] = mapped_column(Text)
+    split: Mapped[str] = mapped_column(String(12), default="unassigned")  # unassigned | dev | test
+    # draft | needs_content | approved | rejected
+    status: Mapped[str] = mapped_column(String(14), default="draft")
+    usage_rights: Mapped[str] = mapped_column(String(20), default="unknown")
+    provenance: Mapped[dict[str, Any]] = mapped_column(default=dict)
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reviewed_by: Mapped[str | None] = mapped_column(String(200))
+
+
 class IngestBatch(Base):
     """A received OTLP batch, so a retried batch is acknowledged without being stored twice."""
 

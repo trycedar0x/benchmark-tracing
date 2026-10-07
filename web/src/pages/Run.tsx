@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, Square } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import { AddToDataset } from '@/components/add-to-dataset'
 import { Stat } from '@/components/stat'
 import { StatusBadge } from '@/components/status-badge'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -66,15 +67,20 @@ export default function RunPage() {
             <StatusBadge value={r.status} />
           </h1>
         </div>
-        {live && (
-          <Button
-            variant="destructive"
-            disabled={cancel.isPending || r.status === 'cancelling'}
-            onClick={() => cancel.mutate()}
-          >
-            <Square /> Cancel run
-          </Button>
-        )}
+        <div className="flex gap-2">
+          {!live && (r.outcomes?.incorrect || r.outcomes?.error) ? (
+            <AddToDataset runId={r.id} outcomes={['incorrect', 'error']} label="Add failures to dataset" />
+          ) : null}
+          {live && (
+            <Button
+              variant="destructive"
+              disabled={cancel.isPending || r.status === 'cancelling'}
+              onClick={() => cancel.mutate()}
+            >
+              <Square /> Cancel run
+            </Button>
+          )}
+        </div>
       </div>
       {r.error && r.status !== 'succeeded' && (
         <Alert variant={r.status === 'failed' ? 'destructive' : 'default'}>
@@ -98,7 +104,11 @@ export default function RunPage() {
             value={num(r.input_tokens + r.output_tokens)}
             sub={`${num(r.input_tokens)} in / ${num(r.output_tokens)} out`}
           />
-          <Stat label="Est. cost" value={money(r.cost_usd)} sub={r.budget_usd ? `cap ${money(r.budget_usd)}` : 'no cap'} />
+          <Stat
+            label="Est. cost"
+            value={money(r.cost_usd)}
+            sub={r.budget_usd ? `cap ${money(r.budget_usd)}` : 'no cap'}
+          />
           <Stat
             label="Resolved model"
             value={<span className="font-mono text-sm">{r.resolved_models.join(', ') || '–'}</span>}

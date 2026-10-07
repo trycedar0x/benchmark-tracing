@@ -90,6 +90,34 @@ class RunRequest(BaseModel):
     quote_id: str | None = None
 
 
+class ImportRequest(BaseModel):
+    source: str
+    project: str | None = None
+    max_traces: int = Field(default=100, ge=1, le=10000)
+    usage_rights: str
+    content_policy: str = "redacted"
+
+
+class DatasetRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    description: str | None = None
+
+
+class AddItemsRequest(BaseModel):
+    trace_ids: list[str] = Field(default_factory=list)
+    run_id: str | None = None
+    outcomes: list[str] = Field(default_factory=list)
+    split: str = "unassigned"
+
+
+class ReviewRequest(BaseModel):
+    reference_output: str | None = None
+    split: str | None = None
+    usage_rights: str | None = None
+    notes: str | None = None
+    status: str | None = None
+
+
 class SealRequest(BaseModel):
     expected_spans: int = Field(ge=0)
 
@@ -361,6 +389,151 @@ def create_app(workers: int = 0) -> FastAPI:
                 return seal(session, trace_id, body.expected_spans, ws.workspace_id)
         except OTLPError as ex:
             raise HTTPException(409, str(ex)) from ex
+
+    # -- imports
+
+    import_max_content = os.environ.get("BENCHTRACE_IMPORT_MAX_CONTENT", "full")
+
+    @app.post("/api/imports", status_code=201)
+    def start_import(body: ImportRequest, ws: WorkspaceContext = Depends(current_workspace)) -> dict[str, Any]:
+        from benchtrace.imports import IMPORTERS, create_import
+        from benchtrace.otlp import effective_policy
+
+        if body.source not in IMPORTERS:
+            raise HTTPException(400, f"Source must be one of {', '.join(IMPORTERS)}; import files with the CLI.")
+        try:
+            run = create_import(
+                body.source,
+                project=body.project,
+                usage_rights=body.usage_rights,
+                content_policy=effective_policy(import_max_content, body.content_policy),
+                options={"max_traces": body.max_traces},
+                workspace_id=ws.workspace_id,
+            )
+        except ValueError as ex:
+            raise HTTPException(400, str(ex)) from ex
+        enqueue("import", run.id)
+        return row_dict(run)
+
+    @app.get("/api/imports")
+    def list_imports(ws: WorkspaceContext = Depends(current_workspace)) -> list[dict[str, Any]]:
+        from benchtrace.db import ImportRun
+
+        with session_scope() as session:
+            rows = session.scalars(
+                select(ImportRun)
+                .where(ImportRun.workspace_id == ws.workspace_id)
+                .order_by(ImportRun.created_at.desc())
+                .limit(100)
+            ).all()
+            return [row_dict(r) for r in rows]
+
+    @app.get("/api/imports/{import_id}")
+    def get_import(import_id: str, ws: WorkspaceContext = Depends(current_workspace)) -> dict[str, Any]:
+        from benchtrace.db import ImportRun
+
+        with session_scope() as session:
+            run = session.get(ImportRun, import_id)
+            if run is None or run.workspace_id != ws.workspace_id:
+                raise HTTPException(404, "Import not found")
+            return row_dict(run)
+
+    # -- datasets
+
+    def _get_dataset(session, dataset_id: str, ws: WorkspaceContext):
+        from benchtrace.db import Dataset
+
+        ds = session.get(Dataset, dataset_id)
+        if ds is None or ds.workspace_id != ws.workspace_id:
+            raise HTTPException(404, "Dataset not found")
+        return ds
+
+    @app.post("/api/datasets", status_code=201)
+    def new_dataset(body: DatasetRequest, ws: WorkspaceContext = Depends(current_workspace)) -> dict[str, Any]:
+        from benchtrace.datasets import create_dataset
+
+        return row_dict(create_dataset(body.name, body.description, ws.workspace_id))
+
+    @app.get("/api/datasets")
+    def list_datasets(ws: WorkspaceContext = Depends(current_workspace)) -> list[dict[str, Any]]:
+        from benchtrace.db import Dataset, DatasetItem
+
+        with session_scope() as session:
+            rows = session.scalars(
+                select(Dataset).where(Dataset.workspace_id == ws.workspace_id).order_by(Dataset.created_at.desc())
+            ).all()
+            out = []
+            for ds in rows:
+                counts = dict(
+                    session.execute(
+                        select(DatasetItem.status, func.count(DatasetItem.id))
+                        .where(DatasetItem.dataset_id == ds.id)
+                        .group_by(DatasetItem.status)
+                    ).all()
+                )
+                out.append(row_dict(ds) | {"counts": counts})
+            return out
+
+    @app.get("/api/datasets/{dataset_id}")
+    def get_dataset(dataset_id: str, ws: WorkspaceContext = Depends(current_workspace)) -> dict[str, Any]:
+        from benchtrace.db import DatasetItem
+
+        with session_scope() as session:
+            ds = _get_dataset(session, dataset_id, ws)
+            items = session.scalars(
+                select(DatasetItem).where(DatasetItem.dataset_id == dataset_id).order_by(DatasetItem.id)
+            ).all()
+            return row_dict(ds) | {"items": [row_dict(i) for i in items]}
+
+    @app.post("/api/datasets/{dataset_id}/items", status_code=201)
+    def add_items(dataset_id: str, body: AddItemsRequest, ws: WorkspaceContext = Depends(current_workspace)):
+        from benchtrace.datasets import ReviewError, add_run_samples, add_traces
+
+        with session_scope() as session:
+            _get_dataset(session, dataset_id, ws)
+            if body.run_id:
+                _get_run(session, body.run_id, ws)
+        try:
+            items = add_traces(dataset_id, body.trace_ids, body.split) if body.trace_ids else []
+            if body.run_id:
+                items += add_run_samples(dataset_id, body.run_id, body.outcomes, body.split)
+        except LookupError as ex:
+            raise HTTPException(404, str(ex)) from ex
+        except ReviewError as ex:
+            raise HTTPException(400, str(ex)) from ex
+        return [row_dict(i) for i in items]
+
+    @app.patch("/api/datasets/{dataset_id}/items/{item_id}")
+    def review(dataset_id: str, item_id: int, body: ReviewRequest, ws: WorkspaceContext = Depends(current_workspace)):
+        from benchtrace.datasets import ReviewError, review_item
+        from benchtrace.db import DatasetItem
+
+        with session_scope() as session:
+            _get_dataset(session, dataset_id, ws)
+            item = session.get(DatasetItem, item_id)
+            if item is None or item.dataset_id != dataset_id:
+                raise HTTPException(404, "Item not found")
+        try:
+            return row_dict(review_item(item_id, reviewer=ws.user, **body.model_dump()))
+        except ReviewError as ex:
+            raise HTTPException(400, str(ex)) from ex
+
+    @app.get("/api/datasets/{dataset_id}/export")
+    def export_dataset(dataset_id: str, split: str | None = None, ws: WorkspaceContext = Depends(current_workspace)):
+        import json as _json
+
+        from benchtrace.datasets import export_items
+
+        with session_scope() as session:
+            ds = _get_dataset(session, dataset_id, ws)
+            name = ds.name
+        lines = "".join(_json.dumps(row, ensure_ascii=False) + "\n" for row in export_items(dataset_id, split))
+        filename = "".join(c if c.isalnum() or c in "-_" else "-" for c in name) or "dataset"
+        return Response(
+            lines,
+            media_type="application/x-ndjson",
+            headers={"Content-Disposition": f'attachment; filename="{filename}.jsonl"'},
+        )
 
     @app.get("/api/trace-diff")
     def trace_diff(a: str, b: str, ws: WorkspaceContext = Depends(current_workspace)) -> dict[str, Any]:
