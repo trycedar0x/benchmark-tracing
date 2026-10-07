@@ -50,6 +50,24 @@ Or run everything with Postgres in Docker: `docker compose up --build`. The API,
 
 The UI is built with [shadcn/ui](https://ui.shadcn.com) (Nova preset). Browser smoke tests: `npx --prefix web playwright test` against a running server.
 
+## Tracing your own agent
+
+Send traces from your own code with the SDK, or point any OpenTelemetry OTLP/HTTP exporter at `/v1/traces`. Spans from OpenInference and GenAI-semantic-convention instrumentations (OpenAI, Anthropic, LangChain and others) are mapped to model, tool and agent steps.
+
+```python
+from benchtrace.sdk import Benchtrace
+
+bt = Benchtrace("http://127.0.0.1:8321", content="metadata")   # or "redacted" / "full"
+with bt.trace("answer-question", task_id="q-17"):
+    with bt.span("call-model", kind="model", **{"gen_ai.request.model": "gpt-4o-mini"}) as span:
+        bt.record(span, "output", "...")                         # kept only if the policy allows
+print(bt.flush().receipts)                                       # per-trace receipt: expected vs received spans
+```
+
+Delivery is crash-safe. The content policy is applied before anything touches disk. Every batch is written to a local spool (fsync and atomic rename) before it is sent, and is deleted only after the server acknowledges it. Batches left behind by a crash are sent by the next client for the same endpoint. Each batch has a stable id, so a retry after a lost acknowledgement is not stored twice. A full spool refuses new spans and reports them in `bt.health()` instead of silently dropping them. When a `trace` block exits, it seals the trace with its span count. The trace shows as `closed` once every span has arrived, or `incomplete` if some are missing. A closed trace means everything the producer declared was received. It does not prove the instrumentation was complete.
+
+The server stores ingested content according to `BENCHTRACE_INGEST_CONTENT` (default `metadata`). A client can ask for a stricter policy than the server's, but not a looser one.
+
 ## Commands
 
 | Command | What it does |
@@ -62,6 +80,7 @@ The UI is built with [shadcn/ui](https://ui.shadcn.com) (Nova preset). Browser s
 | `runs`, `show RUN` | List runs; show a run's summary, versions and samples |
 | `trace RUN SAMPLE` | Print the span tree for one task |
 | `compare A B` | Paired comparison; `--json` for every row |
+| `diff A B SAMPLE` | Where the two runs' trajectories for one sample diverged |
 | `cancel RUN` | Stop a running run gracefully |
 | `serve`, `worker` | Start the API and web UI; run queued jobs in a separate process |
 | `export RUN` | JSON export, or `--format eee` for [Every Eval Ever](https://github.com/evaleval/every_eval_ever) (needs `--extra eee`; real providers only) |
@@ -78,7 +97,7 @@ State lives in `~/.benchtrace` (override with `BENCHTRACE_HOME`): a SQLite datab
 
 ## Status
 
-Early. The CLI, API server, job queue and web UI work. In progress: OTLP ingest and a Python SDK for your own agents, imports from Langfuse, LangSmith and Braintrust, and trace diffs.
+Early. The CLI, API server, job queue, web UI, trace diff, OTLP ingest and SDK work. In progress: imports from Langfuse, LangSmith and Braintrust, workspaces and authentication, and a Harbor adapter for agent benchmarks.
 
 ## Development
 

@@ -33,6 +33,16 @@ test('core pages render without errors', async ({ page, request }) => {
   const changed = cmp.rows.find((r: { change: string }) => r.change === 'regression' || r.change === 'improvement')
   await visit(page, `/diff?a=${changed.a_trace_id}&b=${changed.b_trace_id}`, 'diff', /First divergence/)
   await visit(page, '/catalog', 'catalog', /gsm8k@1/)
+
+  const traceId = [...crypto.getRandomValues(new Uint8Array(16))].map((x) => x.toString(16).padStart(2, '0')).join('')
+  await request.post('/v1/traces', {
+    headers: { 'Content-Type': 'application/json', 'x-benchtrace-source': 'sdk' },
+    data: { resourceSpans: [{ scopeSpans: [{ spans: [{ traceId, spanId: '0011223344556677', name: 'my-agent-task',
+      startTimeUnixNano: '1700000000000000000', endTimeUnixNano: '1700000002000000000',
+      attributes: [{ key: 'openinference.span.kind', value: { stringValue: 'AGENT' } }] }] }] }] },
+  })
+  await visit(page, '/traces', 'traces', /my-agent-task/)
+  await visit(page, `/traces/${traceId}`, 'sdk-trace', /my-agent-task/)
 })
 
 test('quote, approve and run from the UI', async ({ page }) => {

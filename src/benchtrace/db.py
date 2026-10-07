@@ -171,6 +171,17 @@ class Quote(Base):
     approved_by: Mapped[str | None] = mapped_column(String(200))
 
 
+class IngestBatch(Base):
+    """A received OTLP batch, so a retried batch is acknowledged without being stored twice."""
+
+    __tablename__ = "ingest_batches"
+
+    batch_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    workspace_id: Mapped[str | None] = mapped_column(String(32), index=True)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    span_count: Mapped[int] = mapped_column(Integer, default=0)
+
+
 class Job(Base):
     """Background work item, claimed by workers with an atomic conditional update."""
 

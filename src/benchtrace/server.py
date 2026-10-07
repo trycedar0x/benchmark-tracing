@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
@@ -88,6 +88,10 @@ class RunRequest(BaseModel):
     budget_usd: float | None = Field(default=None, gt=0)
     content_policy: str = "full"
     quote_id: str | None = None
+
+
+class SealRequest(BaseModel):
+    expected_spans: int = Field(ge=0)
 
 
 # ---------------------------------------------------------------------------- app
@@ -306,6 +310,57 @@ def create_app(workers: int = 0) -> FastAPI:
                 "sample": row_dict(sample) if sample else None,
                 "spans": [row_dict(s, exclude=("id", "workspace_id")) for s in spans],
             }
+
+    # -- OTLP ingest
+
+    ingest_policy = os.environ.get("BENCHTRACE_INGEST_CONTENT", "metadata")
+
+    @app.post("/v1/traces")
+    async def otlp_traces(request: Request, ws: WorkspaceContext = Depends(current_workspace)) -> Response:
+        from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceResponse
+
+        from benchtrace.otlp import OTLPError, effective_policy, ingest
+
+        content_type = request.headers.get("content-type", "application/x-protobuf")
+        body = await request.body()
+        if request.headers.get("content-encoding") == "gzip":
+            import gzip
+
+            body = gzip.decompress(body)
+        policy = effective_policy(ingest_policy, request.headers.get("x-benchtrace-content"))
+        try:
+            with session_scope() as session:
+                receipt = ingest(
+                    session,
+                    body,
+                    content_type,
+                    batch_id=request.headers.get("x-benchtrace-batch-id"),
+                    policy=policy,
+                    source=request.headers.get("x-benchtrace-source", "otlp")[:40],
+                    workspace_id=ws.workspace_id,
+                )
+        except OTLPError as ex:
+            raise HTTPException(400, str(ex)) from ex
+        headers = {
+            "x-benchtrace-accepted-spans": str(receipt["accepted_spans"]),
+            "x-benchtrace-duplicate": str(receipt["duplicate"]).lower(),
+            "x-benchtrace-content": policy,
+        }
+        if "json" in content_type:
+            return JSONResponse({"partialSuccess": {}, "benchtrace": receipt}, headers=headers)
+        return Response(
+            ExportTraceServiceResponse().SerializeToString(), media_type="application/x-protobuf", headers=headers
+        )
+
+    @app.post("/api/traces/{trace_id}/seal")
+    def seal_trace(trace_id: str, body: SealRequest, ws: WorkspaceContext = Depends(current_workspace)):
+        from benchtrace.otlp import OTLPError, seal
+
+        try:
+            with session_scope() as session:
+                return seal(session, trace_id, body.expected_spans, ws.workspace_id)
+        except OTLPError as ex:
+            raise HTTPException(409, str(ex)) from ex
 
     @app.get("/api/trace-diff")
     def trace_diff(a: str, b: str, ws: WorkspaceContext = Depends(current_workspace)) -> dict[str, Any]:
