@@ -4,7 +4,7 @@ import subprocess
 
 import pytest
 
-from benchtrace.harbor_adapter import convert_trial, harbor_command, split_model
+from everyeval.harbor_adapter import convert_trial, harbor_command, split_model
 
 RESULT = {
     "id": "trial-uuid",
@@ -100,10 +100,10 @@ def harbor_installed() -> bool:
 
 @pytest.mark.skipif(not (docker_ready() and harbor_installed()), reason="needs Docker and the harbor extra")
 def test_harbor_smoke_oracle_vs_nop():
-    from benchtrace.catalog import get_benchmark
-    from benchtrace.compare import compare_runs
-    from benchtrace.execution import execute_run
-    from benchtrace.service import create_runs
+    from everyeval.catalog import get_benchmark
+    from everyeval.compare import compare_runs
+    from everyeval.execution import execute_run
+    from everyeval.service import create_runs
 
     oracle, nop = create_runs(get_benchmark("harbor-smoke"), ["oracle", "nop"])
     a, b = execute_run(oracle.id), execute_run(nop.id)

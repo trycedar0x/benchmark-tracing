@@ -51,7 +51,7 @@ export default function ImportsPage() {
         <h1 className="text-2xl font-semibold tracking-tight">Imports</h1>
         <p className="text-sm text-muted-foreground">
           Bring production traces from other tools, then draft evaluation datasets from them. Files and Inspect logs
-          import with the CLI: <code>benchtrace import otlp</code> and <code>benchtrace import inspect-log</code>.
+          import with the CLI: <code>everyeval import otlp</code> and <code>everyeval import inspect-log</code>.
         </p>
       </div>
       <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">

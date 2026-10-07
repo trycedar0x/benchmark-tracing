@@ -91,7 +91,7 @@ export default function App() {
         <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-2">
           <NavLink to="/" className="flex items-center gap-2 font-semibold">
             <Activity className="size-4" />
-            benchtrace
+            everyeval
           </NavLink>
           <nav className="flex flex-wrap gap-1">
             {links.map((l) => (

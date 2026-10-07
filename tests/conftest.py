@@ -5,16 +5,17 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
-def benchtrace_home(tmp_path, monkeypatch):
+def everyeval_home(tmp_path, monkeypatch):
     """Give every test its own home directory and an empty database.
 
-    SQLite by default. Set BENCHTRACE_TEST_POSTGRES to an admin URL
+    SQLite by default. Set EVERYEVAL_TEST_POSTGRES to an admin URL
     (postgresql+psycopg://user:pass@host/postgres) to run each test on a fresh Postgres database.
     """
-    monkeypatch.setenv("BENCHTRACE_HOME", str(tmp_path / "home"))
-    monkeypatch.delenv("BENCHTRACE_DATABASE_URL", raising=False)
-    monkeypatch.delenv("BENCHTRACE_AUTH", raising=False)
-    admin_url = os.environ.get("BENCHTRACE_TEST_POSTGRES")
+    monkeypatch.setenv("EVERYEVAL_HOME", str(tmp_path / "home"))
+    for prefix in ("EVERYEVAL_", "BENCHTRACE_"):  # BENCHTRACE_*: old names, still read as a fallback
+        monkeypatch.delenv(f"{prefix}DATABASE_URL", raising=False)
+        monkeypatch.delenv(f"{prefix}AUTH", raising=False)
+    admin_url = os.environ.get("EVERYEVAL_TEST_POSTGRES")
     if not admin_url:
         yield tmp_path / "home"
         return
@@ -24,9 +25,9 @@ def benchtrace_home(tmp_path, monkeypatch):
     admin = create_engine(admin_url, isolation_level="AUTOCOMMIT")
     with admin.connect() as conn:
         conn.execute(text(f'CREATE DATABASE "{name}"'))
-    monkeypatch.setenv("BENCHTRACE_DATABASE_URL", admin_url.rsplit("/", 1)[0] + f"/{name}")
+    monkeypatch.setenv("EVERYEVAL_DATABASE_URL", admin_url.rsplit("/", 1)[0] + f"/{name}")
     yield tmp_path / "home"
-    from benchtrace.db import _engine
+    from everyeval.db import _engine
 
     _engine.cache_clear()
     with admin.connect() as conn:

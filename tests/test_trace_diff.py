@@ -1,15 +1,15 @@
 from sqlalchemy import select
 
-from benchtrace.catalog import get_benchmark
-from benchtrace.compare import compare_runs
-from benchtrace.db import SampleResult, session_scope
-from benchtrace.execution import execute_run
-from benchtrace.service import create_runs
-from benchtrace.trace_diff import diff_traces
+from everyeval.catalog import get_benchmark
+from everyeval.compare import compare_runs
+from everyeval.db import SampleResult, session_scope
+from everyeval.execution import execute_run
+from everyeval.service import create_runs
+from everyeval.trace_diff import diff_traces
 
 
 def _runs():
-    a, b = create_runs(get_benchmark("toy-tools"), ["btmock/strong", "btmock/flaky"], limit=15)
+    a, b = create_runs(get_benchmark("toy-tools"), ["mock/strong", "mock/flaky"], limit=15)
     return execute_run(a.id), execute_run(b.id)
 
 
@@ -46,22 +46,22 @@ def test_error_trace_shows_missing_steps():
 
 
 def test_sdk_and_otlp_content_keys_feed_summaries_and_previews():
-    from benchtrace.cli import _span_label
-    from benchtrace.db import Span
-    from benchtrace.trace_diff import _output, _summary
+    from everyeval.cli import _span_label
+    from everyeval.db import Span
+    from everyeval.trace_diff import _output, _summary
 
     sdk_model = Span(
         kind="model",
         name="chat",
         content={
-            "benchtrace.content.output": "The answer is 4",
-            "benchtrace.content.tool_calls": '[{"function": "calc", "arguments": {"expression": "2+2"}}]',
+            "everyeval.content.output": "The answer is 4",
+            "everyeval.content.tool_calls": '[{"function": "calc", "arguments": {"expression": "2+2"}}]',
         },
     )
     sdk_tool = Span(
         kind="tool",
         name="calc",
-        content={"benchtrace.content.arguments": '{"expression": "2+2"}', "benchtrace.content.result": "4"},
+        content={"everyeval.content.arguments": '{"expression": "2+2"}', "everyeval.content.result": "4"},
     )
     otlp_model = Span(kind="model", name="llm", content={"output.value": "Paris"})
     otlp_tool = Span(kind="tool", name="search", content={"input.value": "capital of France", "output.value": "Paris"})
@@ -73,4 +73,7 @@ def test_sdk_and_otlp_content_keys_feed_summaries_and_previews():
     assert _summary(otlp_model) == "Paris"
     assert "“The answer is 4”" in _span_label(sdk_model)
     assert "“4”" in _span_label(sdk_tool)
+    # Traces recorded before the rename use the benchtrace.content. prefix.
+    old_sdk_model = Span(kind="model", name="chat", content={"benchtrace.content.output": "The answer is 4"})
+    assert _output(old_sdk_model)["output"] == "The answer is 4"
     assert "“Paris”" in _span_label(otlp_model)

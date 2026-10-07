@@ -1,4 +1,4 @@
-"""End-to-end runs with the offline btmock models (no network, no API keys)."""
+"""End-to-end runs with the offline mock models (no network, no API keys)."""
 
 import threading
 import time
@@ -6,11 +6,11 @@ import time
 import pytest
 from sqlalchemy import select
 
-from benchtrace.catalog import get_benchmark
-from benchtrace.compare import compare_runs
-from benchtrace.db import Run, SampleResult, Span, session_scope
-from benchtrace.execution import execute_run, request_cancel
-from benchtrace.service import PlanError, approve_quote, create_quote, create_runs, runs_from_quote
+from everyeval.catalog import get_benchmark
+from everyeval.compare import compare_runs
+from everyeval.db import Run, SampleResult, Span, session_scope
+from everyeval.execution import execute_run, request_cancel
+from everyeval.service import PlanError, approve_quote, create_quote, create_runs, runs_from_quote
 
 
 def run_one(benchmark: str, model: str, **kwargs) -> Run:
@@ -19,11 +19,11 @@ def run_one(benchmark: str, model: str, **kwargs) -> Run:
 
 
 def test_run_records_results_metrics_and_traces():
-    run = run_one("toy-arith", "btmock/strong", limit=10)
+    run = run_one("toy-arith", "mock/strong", limit=10)
     assert run.status == "succeeded"
     assert run.samples_done == 10 and run.samples_total == 10
     assert run.metrics["match"]["accuracy"] == pytest.approx(run.n_correct / 10)
-    assert run.resolved_models == ["btmock-strong-2026-01"]
+    assert run.resolved_models == ["mock-strong-2026-01"]
     assert run.cost_usd and run.cost_usd > 0
     assert run.manifest["versions"]["inspect_ai"]
     with session_scope() as session:
@@ -37,7 +37,7 @@ def test_run_records_results_metrics_and_traces():
 
 
 def test_tool_calls_become_tool_spans():
-    run = run_one("toy-tools", "btmock/perfect", limit=3)
+    run = run_one("toy-tools", "mock/perfect", limit=3)
     assert run.status == "succeeded" and run.n_correct == 3
     with session_scope() as session:
         tools = session.scalars(
@@ -47,8 +47,8 @@ def test_tool_calls_become_tool_spans():
 
 
 def test_paired_comparison_between_models():
-    a = run_one("toy-arith", "btmock/strong")
-    b = run_one("toy-arith", "btmock/weak")
+    a = run_one("toy-arith", "mock/strong")
+    b = run_one("toy-arith", "mock/weak")
     result = compare_runs(a.id, b.id)
     assert result.compatibility.comparable
     assert result.n_paired == 40
@@ -61,8 +61,8 @@ def test_paired_comparison_between_models():
 
 
 def test_errors_are_excluded_from_scores():
-    a = run_one("toy-tools", "btmock/strong")
-    b = run_one("toy-tools", "btmock/flaky")
+    a = run_one("toy-tools", "mock/strong")
+    b = run_one("toy-tools", "mock/flaky")
     assert b.n_error > 0
     result = compare_runs(a.id, b.id)
     assert result.errors["b_only"] == b.n_error
@@ -70,16 +70,16 @@ def test_errors_are_excluded_from_scores():
 
 
 def test_different_variants_are_blocked():
-    a = run_one("toy-arith", "btmock/strong", limit=3)
-    b = run_one("toy-tools", "btmock/strong", limit=3)
+    a = run_one("toy-arith", "mock/strong", limit=3)
+    b = run_one("toy-tools", "mock/strong", limit=3)
     result = compare_runs(a.id, b.id)
     assert not result.compatibility.comparable
     assert result.delta is None
 
 
 def test_model_revision_drift_blocks_strict_comparison():
-    a = run_one("toy-arith", "btmock/strong")
-    b = run_one("toy-arith", "btmock/drifty")
+    a = run_one("toy-arith", "mock/strong")
+    b = run_one("toy-arith", "mock/drifty")
     assert len(b.resolved_models) == 2
     result = compare_runs(a.id, b.id)
     assert not result.compatibility.comparable
@@ -88,7 +88,7 @@ def test_model_revision_drift_blocks_strict_comparison():
 
 
 def test_metadata_policy_withholds_content():
-    run = run_one("toy-arith", "btmock/strong", limit=2, content_policy="metadata")
+    run = run_one("toy-arith", "mock/strong", limit=2, content_policy="metadata")
     with session_scope() as session:
         samples = session.scalars(select(SampleResult).where(SampleResult.run_id == run.id)).all()
         spans = session.scalars(select(Span).where(Span.run_id == run.id)).all()
@@ -98,7 +98,7 @@ def test_metadata_policy_withholds_content():
 
 
 def test_budget_cap_stops_run():
-    run = run_one("toy-tools", "btmock/strong", budget_usd=0.001)
+    run = run_one("toy-tools", "mock/strong", budget_usd=0.001)
     assert run.status == "budget_exceeded"
     assert run.samples_done < 30
     assert "Budget cap" in run.error
@@ -110,7 +110,7 @@ def test_budget_requires_known_price():
 
 
 def test_cancel_running_run():
-    [run] = create_runs(get_benchmark("toy-tools"), ["btmock/strong"], epochs=50)
+    [run] = create_runs(get_benchmark("toy-tools"), ["mock/strong"], epochs=50)
     holder = {}
     thread = threading.Thread(target=lambda: holder.update(run=execute_run(run.id)))
     thread.start()
@@ -128,8 +128,8 @@ def test_cancel_running_run():
 
 
 def test_quote_approval_flow():
-    quote = create_quote(get_benchmark("toy-arith"), ["btmock/strong", "btmock/weak"], limit=20, sample_size=3)
-    est = quote.estimate["btmock/strong"]
+    quote = create_quote(get_benchmark("toy-arith"), ["mock/strong", "mock/weak"], limit=20, sample_size=3)
+    est = quote.estimate["mock/strong"]
     assert est["samples_measured"] == 3
     assert est["cost_usd_range"][0] <= est["cost_usd"] <= est["cost_usd_range"][1]
     with pytest.raises(PlanError, match="approve"):

@@ -9,7 +9,7 @@ const require = createRequire(resolve('web/package.json'))
 const { chromium } = require('playwright')
 
 const [out, runA, runB, dataset] = process.argv.slice(2)
-const base = process.env.BENCHTRACE_URL ?? 'http://127.0.0.1:8321'
+const base = process.env.EVERYEVAL_URL ?? 'http://127.0.0.1:8321'
 const size = { width: 1270, height: 760 } // Product Hunt gallery size
 const api = async (path) => (await fetch(base + path)).json()
 

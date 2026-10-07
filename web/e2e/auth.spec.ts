@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-// Runs against a server started with BENCHTRACE_AUTH=1 at AUTH_URL, with user AUTH_EMAIL / AUTH_PASSWORD.
+// Runs against a server started with EVERYEVAL_AUTH=1 at AUTH_URL, with user AUTH_EMAIL / AUTH_PASSWORD.
 const url = process.env.AUTH_URL
 test.skip(!url, 'AUTH_URL not set')
 
