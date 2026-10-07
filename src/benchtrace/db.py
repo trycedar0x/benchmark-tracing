@@ -165,10 +165,30 @@ class Quote(Base):
     samples_planned: Mapped[int | None] = mapped_column(Integer)
     estimate: Mapped[dict[str, Any]] = mapped_column(default=dict)
     cap_usd: Mapped[float | None] = mapped_column(Float)
-    # draft | approved | used
+    # estimating | draft | approved | used | failed
     status: Mapped[str] = mapped_column(String(10), default="draft")
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     approved_by: Mapped[str | None] = mapped_column(String(200))
+
+
+class Job(Base):
+    """Background work item, claimed by workers with an atomic conditional update."""
+
+    __tablename__ = "jobs"
+    __table_args__ = (Index("ix_jobs_status_created", "status", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("job"))
+    kind: Mapped[str] = mapped_column(String(20))  # run | quote
+    target_id: Mapped[str] = mapped_column(String(32), index=True)
+    # queued | running | done | failed
+    status: Mapped[str] = mapped_column(String(10), default="queued")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    worker: Mapped[str | None] = mapped_column(String(100))
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[str | None] = mapped_column(Text)
 
 
 def _sqlite_pragmas(dbapi_connection: Any, _record: Any) -> None:

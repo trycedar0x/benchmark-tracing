@@ -93,7 +93,7 @@ def create_runs(
     return runs
 
 
-def create_quote(
+def create_quote_record(
     entry: BenchmarkEntry,
     models: list[str],
     *,
@@ -102,11 +102,32 @@ def create_quote(
     sample_size: int = 5,
     workspace_id: str | None = None,
 ) -> Quote:
+    """Record a quote to be estimated. `compute_quote` fills in the estimate."""
+    validate_plan(entry, models, None, "metadata")
+    with session_scope() as session:
+        quote = Quote(
+            workspace_id=workspace_id,
+            benchmark=entry.ref,
+            models=models,
+            limit=limit,
+            sample_size=sample_size,
+            samples_planned=planned_samples(entry, limit, epochs),
+            status="estimating",
+        )
+        session.add(quote)
+        session.flush()
+    return quote
+
+
+def compute_quote(quote_id: str) -> Quote:
     """Run a small sample per model and extrapolate tokens and cost to the planned run.
 
     The sample run is a real run: with paid models it costs money.
     """
-    planned = planned_samples(entry, limit, epochs)
+    with session_scope() as session:
+        quote = session.get(Quote, quote_id)
+        entry, models, planned = get_benchmark(quote.benchmark), list(quote.models), quote.samples_planned
+        sample_size, workspace_id = quote.sample_size, quote.workspace_id
     sample_runs = create_runs(
         entry,
         models,
@@ -121,7 +142,7 @@ def create_quote(
         finished = execute_run(run.id)
         with session_scope() as session:
             samples = session.scalars(select(SampleResult).where(SampleResult.run_id == run.id)).all()
-            ok = [s for s in samples if s.outcome != "error"]
+            ok = [s for s in samples if s.outcome not in ("error", "cancelled")]
         estimate[run.model] = _extrapolate(run.model, ok, planned) | {
             "sample_run_id": run.id,
             "sample_status": finished.status,
@@ -129,18 +150,26 @@ def create_quote(
             "sample_cost_usd": finished.cost_usd,
         }
     with session_scope() as session:
-        quote = Quote(
-            workspace_id=workspace_id,
-            benchmark=entry.ref,
-            models=models,
-            limit=limit,
-            sample_size=sample_size,
-            samples_planned=planned,
-            estimate=estimate,
-        )
-        session.add(quote)
-        session.flush()
+        quote = session.get(Quote, quote_id)
+        quote.estimate = estimate
+        quote.status = "draft"
     return quote
+
+
+def create_quote(
+    entry: BenchmarkEntry,
+    models: list[str],
+    *,
+    limit: int | None,
+    epochs: int = 1,
+    sample_size: int = 5,
+    workspace_id: str | None = None,
+) -> Quote:
+    """Create and estimate a quote synchronously (CLI)."""
+    quote = create_quote_record(
+        entry, models, limit=limit, epochs=epochs, sample_size=sample_size, workspace_id=workspace_id
+    )
+    return compute_quote(quote.id)
 
 
 def _extrapolate(model: str, samples: list[SampleResult], planned: int | None) -> dict:
@@ -200,6 +229,7 @@ def runs_from_quote(quote_id: str, content_policy: str = "full", epochs: int = 1
             raise PlanError(f"Quote {quote_id} is {quote.status}; approve it before running.")
         quote.status = "used"
         benchmark, models, limit, cap = quote.benchmark, list(quote.models), quote.limit, quote.cap_usd
+        workspace_id = quote.workspace_id
     per_run_cap = None if cap is None else cap / len(models)
     return create_runs(
         get_benchmark(benchmark),
@@ -209,4 +239,5 @@ def runs_from_quote(quote_id: str, content_policy: str = "full", epochs: int = 1
         budget_usd=per_run_cap,
         content_policy=content_policy,
         quote_id=quote_id,
+        workspace_id=workspace_id,
     )

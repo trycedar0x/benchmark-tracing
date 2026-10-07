@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import threading
@@ -581,6 +582,39 @@ def export(
     if proc.returncode != 0:
         _fail(f"Every Eval Ever conversion failed:\n{proc.stderr[-1500:]}")
     console.print(f"Wrote Every Eval Ever files to {out}/")
+
+
+@app.command()
+def serve(
+    host: Annotated[str, typer.Option(help="Bind address.")] = "127.0.0.1",
+    port: Annotated[int, typer.Option(help="Port.")] = 8321,
+    workers: Annotated[int, typer.Option(help="Embedded worker slots; 0 to use separate `benchtrace worker`.")] = 2,
+) -> None:
+    """Start the API server and web UI."""
+    import logging
+
+    import uvicorn
+
+    from benchtrace.server import create_app
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    if host not in ("127.0.0.1", "localhost", "::1") and not os.environ.get("BENCHTRACE_AUTH"):
+        err.print("[yellow]Warning:[/yellow] binding beyond localhost without authentication enabled.")
+    console.print(f"benchtrace on http://{host}:{port}  (workers: {workers})")
+    uvicorn.run(create_app(workers=workers), host=host, port=port, log_level="warning")
+
+
+@app.command()
+def worker(concurrency: Annotated[int, typer.Option(help="Jobs to run at once.")] = 2) -> None:
+    """Run queued jobs (runs and quotes) from the database."""
+    import logging
+
+    from benchtrace.jobs import Worker
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    w = Worker(concurrency=concurrency)
+    console.print(f"Worker {w.name} with {concurrency} slot(s); Ctrl-C to stop.")
+    w.run_forever()
 
 
 def main() -> None:
