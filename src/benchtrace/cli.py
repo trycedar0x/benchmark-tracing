@@ -562,7 +562,7 @@ def export(
     try:
         import every_eval_ever  # noqa: F401
     except ImportError:
-        _fail("Every Eval Ever export needs: uv pip install 'every-eval-ever[inspect]'")
+        _fail("Every Eval Ever export needs the eee extra: uv sync --extra eee")
     proc = subprocess.run(
         [
             sys.executable,

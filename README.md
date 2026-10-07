@@ -52,7 +52,7 @@ Commands that call paid models ask for confirmation, or take `--yes`.
 | `trace RUN SAMPLE` | Print the span tree for one task |
 | `compare A B` | Paired comparison; `--json` for every row |
 | `cancel RUN` | Stop a running run gracefully |
-| `export RUN` | JSON export, or `--format eee` for [Every Eval Ever](https://github.com/evaleval/every_eval_ever) |
+| `export RUN` | JSON export, or `--format eee` for [Every Eval Ever](https://github.com/evaleval/every_eval_ever) (needs `--extra eee`; real providers only) |
 
 ## How it works
 
