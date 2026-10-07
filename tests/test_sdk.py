@@ -155,6 +155,19 @@ def test_retried_batch_is_not_stored_twice(server, tmp_path):
     assert len(spans) == 3
 
 
+def test_trace_that_raises_is_still_sealed(server, tmp_path):
+    bt = client(server.url, tmp_path)
+    with pytest.raises(ZeroDivisionError):
+        with bt.trace("fails") as root:
+            with bt.span("divide", kind="tool"):
+                raise ZeroDivisionError("division by zero")
+    trace_id = format(root.get_span_context().trace_id, "032x")
+    health = bt.close(timeout=10)
+    assert health.receipts[trace_id]["state"] == "closed"
+    trace, spans = stored(trace_id)
+    assert trace.state == "closed" and {s.status for s in spans} == {"error"}
+
+
 def test_rejected_batch_is_set_aside_and_reported(server, tmp_path):
     bt = client(server.url, tmp_path)
     bt.spool.write(b"not a protobuf \xff\xfe", ".otlp")

@@ -24,6 +24,8 @@ uv run benchtrace trace <run-b> arith-001
 
 `btmock/*` models are deterministic mock models bundled for demos and tests. `toy-arith` and `toy-tools` are bundled benchmarks; `toy-tools` exercises tool calls.
 
+New here? The [user guide](docs/guide.md) walks through reading comparisons, tracing your own agent and gating CI, and [`examples/`](examples) has runnable CLI, SDK, OTLP and HTTP API examples.
+
 ## Real models and benchmarks
 
 ```bash
