@@ -8,6 +8,7 @@ divergence point.
 
 from __future__ import annotations
 
+import json
 from dataclasses import asdict, dataclass, field
 from difflib import SequenceMatcher
 from typing import Any
@@ -18,6 +19,34 @@ from sqlalchemy.orm import Session
 from benchtrace.db import SampleResult, Span, Trace
 
 STEP_KINDS = {"model", "tool", "scorer", "sandbox", "error"}
+
+# Where each content field lives besides its bare name: the SDK prefixes keys with
+# `benchtrace.content.`, and OTLP instrumentations use their own semantic conventions.
+CONTENT_ALIASES = {
+    "output": ("output.value", "llm.output_messages.0.message.content", "gen_ai.completion"),
+    "result": ("tool.result", "gen_ai.tool.call.result", "output.value"),
+    "arguments": ("tool.arguments", "tool_call.function.arguments", "gen_ai.tool.call.arguments", "input.value"),
+}
+
+
+def content_field(content: dict[str, Any] | None, name: str) -> Any:
+    """First non-empty value for a content field, across native, SDK and OTLP key names."""
+    content = content or {}
+    for key in (name, f"benchtrace.content.{name}", *CONTENT_ALIASES.get(name, ())):
+        value = content.get(key)
+        if value not in (None, "", [], {}):
+            return value
+    return None
+
+
+def _tool_calls(content: dict[str, Any]) -> list[dict[str, Any]]:
+    calls = content_field(content, "tool_calls") or []
+    if isinstance(calls, str):  # the SDK stores non-string content as JSON
+        try:
+            calls = json.loads(calls)
+        except ValueError:
+            return []
+    return [c for c in calls if isinstance(c, dict)] if isinstance(calls, list) else []
 
 
 @dataclass
@@ -56,34 +85,43 @@ def _output(span: Span) -> Any:
     attrs = span.attributes or {}
     if span.kind == "model":
         return {
-            "output": content.get("output"),
-            "tool_calls": content.get("tool_calls") or [],
-            "error": content.get("error"),
+            "output": content_field(content, "output"),
+            "tool_calls": _tool_calls(content),
+            "error": content_field(content, "error"),
         }
     if span.kind == "tool":
-        return {"arguments": content.get("arguments"), "result": content.get("result"), "error": content.get("error")}
+        return {
+            "arguments": content_field(content, "arguments"),
+            "result": content_field(content, "result"),
+            "error": content_field(content, "error"),
+        }
     if span.kind == "scorer":
-        return {"score": attrs.get("score.value"), "answer": content.get("answer")}
+        return {"score": attrs.get("score.value"), "answer": content_field(content, "answer")}
     if span.kind == "sandbox":
-        return {"cmd": content.get("cmd"), "output": content.get("output"), "result": attrs.get("sandbox.result")}
-    return {"message": content.get("message")}
+        return {
+            "cmd": content_field(content, "cmd"),
+            "output": content_field(content, "output"),
+            "result": attrs.get("sandbox.result"),
+        }
+    return {"message": content_field(content, "message")}
 
 
 def _summary(span: Span) -> str:
     content = span.content or {}
     attrs = span.attributes or {}
     if span.kind == "model":
-        calls = content.get("tool_calls") or []
+        calls = _tool_calls(content)
         if calls:
-            return "calls " + ", ".join(f"{c['function']}({_short(c.get('arguments'))})" for c in calls)
-        return _short(content.get("output") or content.get("error") or "")
+            return "calls " + ", ".join(f"{c.get('function')}({_short(c.get('arguments'))})" for c in calls)
+        return _short(content_field(content, "output") or content_field(content, "error") or "")
     if span.kind == "tool":
-        return f"{_short(content.get('arguments'))} → {_short(content.get('result') or content.get('error'))}"
+        arguments, result = content_field(content, "arguments"), content_field(content, "result")
+        return f"{_short(arguments)} → {_short(result or content_field(content, 'error'))}"
     if span.kind == "scorer":
-        return f"score {attrs.get('score.value')} · answer {_short(content.get('answer'))}"
+        return f"score {attrs.get('score.value')} · answer {_short(content_field(content, 'answer'))}"
     if span.kind == "sandbox":
-        return _short(content.get("cmd"))
-    return _short(content.get("message") or span.name)
+        return _short(content_field(content, "cmd"))
+    return _short(content_field(content, "message") or span.name)
 
 
 def _short(value: Any, limit: int = 120) -> str:

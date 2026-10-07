@@ -25,6 +25,7 @@ from benchtrace.compare import compare_runs
 from benchtrace.db import Quote, Run, SampleResult, Span, Trace, session_scope
 from benchtrace.execution import execute_run, request_cancel
 from benchtrace.service import PlanError, approve_quote, create_quote, create_runs, is_paid, runs_from_quote
+from benchtrace.trace_diff import content_field
 
 app = typer.Typer(
     help="Run benchmarks against any model, inspect traces, and compare runs.",
@@ -403,8 +404,8 @@ def _span_label(span: Span) -> str:
         bits.append(f"score={attrs['score.value']}")
     if span.status == "error":
         bits.append("[red]error[/red]")
-    content = span.content or {}
-    preview = content.get("output") or content.get("result") or content.get("answer") or content.get("message")
+    previews = (content_field(span.content, name) for name in ("output", "result", "answer", "message"))
+    preview = next((p for p in previews if isinstance(p, str)), None)
     if isinstance(preview, str) and preview:
         bits.append(f"[dim]“{escape(preview[:70])}”[/dim]")
     if span.content_state in ("withheld", "redacted"):
