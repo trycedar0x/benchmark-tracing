@@ -56,4 +56,6 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
+    if not os.environ.get("OPENAI_API_KEY"):
+        raise SystemExit("Set OPENAI_API_KEY first: this example calls the OpenAI API.")
     asyncio.run(main())

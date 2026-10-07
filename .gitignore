@@ -31,3 +31,6 @@ docs/architecture-overview.html
 src/benchtrace/static/
 web/test-results/
 web/playwright-report/
+
+# Demo walkthrough videos from scripts/demo/record.sh: too large for git, upload them where needed
+docs/media/ui-walkthrough.*

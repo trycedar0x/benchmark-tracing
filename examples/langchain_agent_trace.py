@@ -52,4 +52,6 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    if MODEL.startswith("openai:") and not os.environ.get("OPENAI_API_KEY"):
+        raise SystemExit("Set OPENAI_API_KEY first, or LANGCHAIN_MODEL to use another provider.")
     main()

@@ -60,7 +60,15 @@ npm --prefix web ci && npm --prefix web run build   # builds the UI into the Pyt
 uv run benchtrace serve                              # http://127.0.0.1:8321, with 2 embedded workers
 ```
 
-Or run everything with Postgres in Docker: `docker compose up --build`. The API, a worker and Postgres start, and the UI is at http://127.0.0.1:8321. Over the API, paid models need an approved quote (`BENCHTRACE_REQUIRE_QUOTE=0` disables this).
+Or run everything with Postgres in Docker. Authentication is on in this setup, so set a secret key and create the first user:
+
+```bash
+export BENCHTRACE_SECRET_KEY="$(openssl rand -hex 32)"
+docker compose up --build -d
+docker compose run --rm api benchtrace admin create-user you@example.com --workspace main
+```
+
+The API, a worker and Postgres start, and the UI is at http://127.0.0.1:8321. Over the API, paid models need an approved quote (`BENCHTRACE_REQUIRE_QUOTE=0` disables this).
 
 The UI is built with [shadcn/ui](https://ui.shadcn.com) (Nova preset). Browser smoke tests: `npx --prefix web playwright test` against a running server.
 
