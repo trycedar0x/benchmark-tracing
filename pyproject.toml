@@ -10,7 +10,7 @@ dependencies = [
     "numpy>=2.5.3",
     "pydantic>=2.13.5",
     "pyyaml>=6.0.3",
-    "rich>=15.0.0",
+    "rich>=14.0.0",
     "scipy>=1.18.1",
     "sqlalchemy>=2.1.3",
     "typer>=0.27.3",
@@ -25,6 +25,9 @@ benchtrace = "benchtrace._registry"
 [project.optional-dependencies]
 benchmarks = [
     "inspect-evals>=0.23.0",
+]
+eee = [
+    "every-eval-ever[inspect]>=0.3.0",
 ]
 
 [build-system]
