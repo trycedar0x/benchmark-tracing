@@ -42,3 +42,13 @@ def test_content_policies():
 def test_mock_prices_and_unknown_models():
     assert cost_for("btmock/strong", 1_000_000, 0) == 2.0
     assert cost_for("someprovider/unpriced", 1000, 1000) is None
+
+
+def test_unknown_execution_backend_is_rejected():
+    import pytest
+
+    from benchtrace.backends import get_backend
+
+    assert get_backend().name == "local"
+    with pytest.raises(ValueError, match="Unknown execution backend"):
+        get_backend("modal")
