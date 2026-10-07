@@ -1,0 +1,8 @@
+.venv
+.scratch
+.git
+docs
+web/node_modules
+web/test-results
+src/benchtrace/static
+**/__pycache__

@@ -1,0 +1,47 @@
+# benchtrace: API + web UI, a worker, and Postgres.
+#   docker compose up --build    then open http://127.0.0.1:8321
+# Provider keys (OPENAI_API_KEY, ANTHROPIC_API_KEY, ...) are read from your shell or a .env file.
+x-benchtrace: &benchtrace
+  build: .
+  image: benchtrace:local
+  environment: &env
+    BENCHTRACE_DATABASE_URL: postgresql+psycopg://benchtrace:benchtrace@db:5432/benchtrace
+    BENCHTRACE_HOME: /data
+    OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+    HF_TOKEN: ${HF_TOKEN:-}
+  volumes:
+    - benchtrace-data:/data
+  depends_on:
+    db:
+      condition: service_healthy
+
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: benchtrace
+      POSTGRES_PASSWORD: benchtrace
+      POSTGRES_DB: benchtrace
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U benchtrace"]
+      interval: 2s
+      retries: 30
+
+  api:
+    <<: *benchtrace
+    command: ["benchtrace", "serve", "--host", "0.0.0.0", "--workers", "0"]
+    ports:
+      # Bound to localhost: enable auth (BENCHTRACE_AUTH=1) before exposing it further.
+      - "127.0.0.1:8321:8321"
+
+  worker:
+    <<: *benchtrace
+    command: ["benchtrace", "worker", "--concurrency", "2"]
+
+volumes:
+  benchtrace-data:
+  postgres-data:
