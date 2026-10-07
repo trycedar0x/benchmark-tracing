@@ -1,15 +1,15 @@
 from sqlalchemy import select
 
-from benchtrace.catalog import get_benchmark
-from benchtrace.compare import compare_runs
-from benchtrace.db import SampleResult, session_scope
-from benchtrace.execution import execute_run
-from benchtrace.service import create_runs
-from benchtrace.trace_diff import diff_traces
+from everyeval.catalog import get_benchmark
+from everyeval.compare import compare_runs
+from everyeval.db import SampleResult, session_scope
+from everyeval.execution import execute_run
+from everyeval.service import create_runs
+from everyeval.trace_diff import diff_traces
 
 
 def _runs():
-    a, b = create_runs(get_benchmark("toy-tools"), ["btmock/strong", "btmock/flaky"], limit=15)
+    a, b = create_runs(get_benchmark("toy-tools"), ["mock/strong", "mock/flaky"], limit=15)
     return execute_run(a.id), execute_run(b.id)
 
 

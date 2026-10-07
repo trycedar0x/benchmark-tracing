@@ -3,7 +3,7 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
-from benchtrace.server import create_app
+from everyeval.server import create_app
 
 
 @pytest.fixture
@@ -34,7 +34,7 @@ def test_catalog_and_health(client):
 
 
 def test_run_through_queue_then_compare_and_trace(client):
-    resp = client.post("/api/runs", json={"benchmark": "toy-arith", "models": ["btmock/strong", "btmock/weak"]})
+    resp = client.post("/api/runs", json={"benchmark": "toy-arith", "models": ["mock/strong", "mock/weak"]})
     assert resp.status_code == 201, resp.text
     a, b = (r["id"] for r in resp.json())
     run_a = wait_for(client, f"/api/runs/{a}", finished)
@@ -61,13 +61,13 @@ def test_paid_models_need_approved_quote(client):
 
 
 def test_quote_flow(client):
-    resp = client.post("/api/quotes", json={"benchmark": "toy-arith", "models": ["btmock/weak"], "sample_size": 3})
+    resp = client.post("/api/quotes", json={"benchmark": "toy-arith", "models": ["mock/weak"], "sample_size": 3})
     assert resp.status_code == 201, resp.text
     quote_id = resp.json()["id"]
     early = client.post(f"/api/quotes/{quote_id}/approve", json={"cap_usd": 1})
     quote = wait_for(client, f"/api/quotes/{quote_id}", lambda q: q["status"] != "estimating")
     assert quote["status"] == "draft"
-    assert quote["estimate"]["btmock/weak"]["samples_measured"] == 3
+    assert quote["estimate"]["mock/weak"]["samples_measured"] == 3
     if early.status_code == 200:
         pytest.skip("estimate finished before the early approval attempt")
     assert early.status_code == 409
@@ -78,7 +78,7 @@ def test_quote_flow(client):
 
 
 def test_cancel_via_api(client):
-    [run] = client.post("/api/runs", json={"benchmark": "toy-tools", "models": ["btmock/strong"], "epochs": 50}).json()
+    [run] = client.post("/api/runs", json={"benchmark": "toy-tools", "models": ["mock/strong"], "epochs": 50}).json()
     wait_for(client, f"/api/runs/{run['id']}", lambda r: r["samples_done"] > 0)
     client.post(f"/api/runs/{run['id']}/cancel")
     final = wait_for(client, f"/api/runs/{run['id']}", finished)

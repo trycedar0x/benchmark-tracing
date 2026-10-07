@@ -1,5 +1,5 @@
 [project]
-name = "benchtrace"
+name = "everyeval"
 version = "0.1.0"
 description = "Open-source benchmark evaluation with traces: catalog, quote, run, compare."
 readme = "README.md"
@@ -24,10 +24,10 @@ dependencies = [
 ]
 
 [project.scripts]
-benchtrace = "benchtrace.cli:app"
+everyeval = "everyeval.cli:app"
 
 [project.entry-points.inspect_ai]
-benchtrace = "benchtrace._registry"
+everyeval = "everyeval._registry"
 
 [project.optional-dependencies]
 benchmarks = [

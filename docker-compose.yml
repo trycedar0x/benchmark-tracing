@@ -1,22 +1,22 @@
-# benchtrace: API + web UI, a worker, and Postgres.
+# everyeval: API + web UI, a worker, and Postgres.
 #   docker compose up --build    then open http://127.0.0.1:8321
 # Provider keys (OPENAI_API_KEY, ANTHROPIC_API_KEY, ...) are read from your shell or a .env file.
-x-benchtrace: &benchtrace
+x-everyeval: &everyeval
   build: .
-  image: benchtrace:local
+  image: everyeval:local
   environment: &env
-    BENCHTRACE_DATABASE_URL: postgresql+psycopg://benchtrace:benchtrace@db:5432/benchtrace
-    BENCHTRACE_HOME: /data
+    EVERYEVAL_DATABASE_URL: postgresql+psycopg://everyeval:everyeval@db:5432/everyeval
+    EVERYEVAL_HOME: /data
     # Authentication and encrypted secrets. Create the first user with:
-    #   docker compose run --rm api benchtrace admin create-user you@example.com --workspace main
-    BENCHTRACE_AUTH: ${BENCHTRACE_AUTH:-1}
-    BENCHTRACE_SECRET_KEY: ${BENCHTRACE_SECRET_KEY:?set BENCHTRACE_SECRET_KEY to a long random string}
+    #   docker compose run --rm api everyeval admin create-user you@example.com --workspace main
+    EVERYEVAL_AUTH: ${EVERYEVAL_AUTH:-1}
+    EVERYEVAL_SECRET_KEY: ${EVERYEVAL_SECRET_KEY:?set EVERYEVAL_SECRET_KEY to a long random string}
     OPENAI_API_KEY: ${OPENAI_API_KEY:-}
     ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
     HF_TOKEN: ${HF_TOKEN:-}
   volumes:
-    - benchtrace-data:/data
+    - everyeval-data:/data
   depends_on:
     db:
       condition: service_healthy
@@ -25,32 +25,32 @@ services:
   db:
     image: postgres:17
     environment:
-      POSTGRES_USER: benchtrace
-      POSTGRES_PASSWORD: benchtrace
-      POSTGRES_DB: benchtrace
+      POSTGRES_USER: everyeval
+      POSTGRES_PASSWORD: everyeval
+      POSTGRES_DB: everyeval
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U benchtrace"]
+      test: ["CMD-SHELL", "pg_isready -U everyeval"]
       interval: 2s
       retries: 30
 
   api:
-    <<: *benchtrace
-    command: ["benchtrace", "serve", "--host", "0.0.0.0", "--workers", "0"]
+    <<: *everyeval
+    command: ["everyeval", "serve", "--host", "0.0.0.0", "--workers", "0"]
     ports:
       # Bound to localhost. Put TLS in front before exposing it beyond this machine.
       - "127.0.0.1:8321:8321"
 
   worker:
-    <<: *benchtrace
-    command: ["benchtrace", "worker", "--concurrency", "2"]
+    <<: *everyeval
+    command: ["everyeval", "worker", "--concurrency", "2"]
     # Sandboxed benchmarks (HumanEval, MBPP, Harbor agent benchmarks) start Docker containers.
     # Uncomment to let the worker use the host's Docker daemon; this grants it root-equivalent access.
     # volumes:
-    #   - benchtrace-data:/data
+    #   - everyeval-data:/data
     #   - /var/run/docker.sock:/var/run/docker.sock
 
 volumes:
-  benchtrace-data:
+  everyeval-data:
   postgres-data:

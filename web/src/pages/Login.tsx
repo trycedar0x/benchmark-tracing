@@ -23,7 +23,7 @@ export default function LoginPage() {
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Activity className="size-4" /> benchtrace
+            <Activity className="size-4" /> everyeval
           </CardTitle>
           <CardDescription>Sign in to your workspace.</CardDescription>
         </CardHeader>

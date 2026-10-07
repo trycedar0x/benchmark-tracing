@@ -11,10 +11,10 @@ Each example runs offline with the bundled mock models, except the two agent fra
 | [`otlp_json.sh`](otlp_json.sh) | Sending a trace as OTLP/JSON with `curl`, for apps not written in Python | `bash examples/otlp_json.sh` |
 | [`api_regression_gate.py`](api_regression_gate.py) | Starting runs over the HTTP API and failing CI on a clear regression | `uv run python examples/api_regression_gate.py --limit 20` |
 
-`cli_tour.sh` uses a throwaway `BENCHTRACE_HOME`. The others talk to a running server:
+`cli_tour.sh` uses a throwaway `EVERYEVAL_HOME`. The others talk to a running server:
 
 ```bash
-BENCHTRACE_INGEST_CONTENT=full uv run benchtrace serve    # keep this running in another terminal
+EVERYEVAL_INGEST_CONTENT=full uv run everyeval serve    # keep this running in another terminal
 ```
 
-Set `BENCHTRACE_URL` to use a server other than `http://127.0.0.1:8321`, and `BENCHTRACE_API_KEY` when authentication is on.
+Set `EVERYEVAL_URL` to use a server other than `http://127.0.0.1:8321`, and `EVERYEVAL_API_KEY` when authentication is on.

@@ -1,0 +1,56 @@
+name: publish
+
+# Publishes to PyPI when a GitHub release is published. Uses trusted publishing, so no token is stored:
+# on pypi.org, add this repository, workflow `publish.yml` and environment `pypi` as a trusted publisher.
+# The release tag must match the version in pyproject.toml (v0.1.0 for 0.1.0).
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: false
+      - name: Check the tag matches the package version
+        run: |
+          version=$(uv version --short)
+          if [ "${GITHUB_REF_NAME#v}" != "$version" ]; then
+            echo "Release tag $GITHUB_REF_NAME does not match version $version in pyproject.toml"; exit 1
+          fi
+      # The web UI is built into the package, so `everyeval serve` works after a plain install.
+      - run: npm --prefix web ci
+      - run: npm --prefix web run build
+      - run: uv build
+      - name: Check the wheel works without the source tree
+        run: |
+          unzip -l dist/*.whl | grep -q "everyeval/static/index.html"
+          export EVERYEVAL_HOME=$RUNNER_TEMP/home
+          uvx --isolated --from dist/*.whl everyeval run toy-arith -m mock/strong --limit 3 --yes
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: false
+      - run: uv publish --trusted-publishing always
