@@ -164,10 +164,7 @@ def authenticate(bearer: str | None, session_token: str | None, workspace_hint: 
         if not token:
             raise AuthError("Sign in or send an API key.")
         found = session.get(UserSession, _sha(token))
-        expires = found.expires_at if found else None
-        if expires is not None and expires.tzinfo is None:
-            expires = expires.replace(tzinfo=now().tzinfo)
-        if found is None or expires < now():
+        if found is None or found.expires_at < now():
             raise AuthError("Session expired; sign in again.")
         user = session.get(User, found.user_id)
         options = memberships(session, user.id)
