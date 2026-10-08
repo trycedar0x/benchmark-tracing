@@ -1,4 +1,5 @@
 import time
+from datetime import datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -52,6 +53,22 @@ def test_run_through_queue_then_compare_and_trace(client):
     assert comparison["compatibility"]["comparable"]
     assert comparison["delta"] < 0
     assert [r["id"] for r in client.get("/api/runs").json()][:2] == [b, a] or len(client.get("/api/runs").json()) == 2
+
+
+def test_timestamps_carry_utc_offset(client):
+    # SQLite drops the offset; a bare ISO string is parsed as local time by browsers.
+    def assert_utc(value):
+        assert datetime.fromisoformat(value).utcoffset() == timedelta(0), value
+
+    run_id = client.post("/api/runs", json={"benchmark": "toy-arith", "models": ["mock/strong"]}).json()[0]["id"]
+    run = wait_for(client, f"/api/runs/{run_id}", finished)
+    listed = client.get("/api/runs").json()[0]
+    for value in (run["created_at"], run["started_at"], run["finished_at"], listed["created_at"]):
+        assert_utc(value)
+    sample = client.get(f"/api/runs/{run_id}/samples").json()["items"][0]
+    trace = client.get(f"/api/traces/{sample['trace_id']}").json()
+    assert_utc(trace["trace"]["created_at"])
+    assert_utc(trace["spans"][0]["start_time"])
 
 
 def test_paid_models_need_approved_quote(client):

@@ -21,6 +21,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    TypeDecorator,
     create_engine,
     event,
 )
@@ -32,6 +33,28 @@ from everyeval.config import settings
 
 def now() -> datetime:
     return datetime.now(UTC)
+
+
+class UTCDateTime(TypeDecorator[datetime]):
+    """A timezone-aware UTC datetime on every backend.
+
+    Postgres keeps the offset; SQLite stores bare text, so values come back
+    naive. Normalize to UTC on write and attach UTC on read so callers and
+    the API always see aware datetimes.
+    """
+
+    impl = DateTime(timezone=True)
+    cache_ok = True
+
+    def process_bind_param(self, value: datetime | None, dialect: Any) -> datetime | None:
+        if value is not None and value.tzinfo is not None:
+            value = value.astimezone(UTC)
+        return value
+
+    def process_result_value(self, value: datetime | None, dialect: Any) -> datetime | None:
+        if value is not None:
+            value = value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+        return value
 
 
 def new_id(prefix: str) -> str:
@@ -50,9 +73,9 @@ class Run(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("run"))
     workspace_id: Mapped[str | None] = mapped_column(String(32), index=True)
     group_id: Mapped[str | None] = mapped_column(String(32), index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
-    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=now)
+    started_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     # queued | running | succeeded | failed | cancelled | budget_exceeded
     status: Mapped[str] = mapped_column(String(20), default="queued", index=True)
     benchmark: Mapped[str] = mapped_column(String(100), index=True)
@@ -119,8 +142,8 @@ class Span(Base):
     name: Mapped[str] = mapped_column(String(300))
     # agent | model | tool | scorer | solver | sandbox | error | span | unknown
     kind: Mapped[str] = mapped_column(String(20))
-    start_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    end_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    start_time: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    end_time: Mapped[datetime | None] = mapped_column(UTCDateTime())
     status: Mapped[str] = mapped_column(String(10), default="ok")
     attributes: Mapped[dict[str, Any]] = mapped_column(default=dict)
     content: Mapped[dict[str, Any] | None] = mapped_column(JSON)
@@ -141,9 +164,9 @@ class Trace(Base):
     name: Mapped[str | None] = mapped_column(String(300))
     source: Mapped[str] = mapped_column(String(40), default="inspect")
     source_ref: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
-    start_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    end_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=now)
+    start_time: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    end_time: Mapped[datetime | None] = mapped_column(UTCDateTime())
     span_count: Mapped[int] = mapped_column(Integer, default=0)
     # open | closed: closed means all producer-declared spans were received
     state: Mapped[str] = mapped_column(String(10), default="closed")
@@ -157,7 +180,7 @@ class Quote(Base):
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("quote"))
     workspace_id: Mapped[str | None] = mapped_column(String(32), index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=now)
     benchmark: Mapped[str] = mapped_column(String(100))
     models: Mapped[list[Any]] = mapped_column(default=list)
     limit: Mapped[int | None] = mapped_column(Integer)
@@ -167,7 +190,7 @@ class Quote(Base):
     cap_usd: Mapped[float | None] = mapped_column(Float)
     # estimating | draft | approved | used | failed
     status: Mapped[str] = mapped_column(String(10), default="draft")
-    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    approved_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     approved_by: Mapped[str | None] = mapped_column(String(200))
 
 
@@ -176,7 +199,7 @@ class Workspace(Base):
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("ws"))
     name: Mapped[str] = mapped_column(String(200), unique=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=now)
 
 
 class User(Base):
@@ -185,7 +208,7 @@ class User(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("usr"))
     email: Mapped[str] = mapped_column(String(320), unique=True)
     password_hash: Mapped[str] = mapped_column(String(300))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=now)
 
 
 class Membership(Base):
@@ -208,9 +231,9 @@ class ApiKey(Base):
     key_hash: Mapped[str] = mapped_column(String(64), unique=True)
     role: Mapped[str] = mapped_column(String(10), default="member")
     created_by: Mapped[str | None] = mapped_column(String(320))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
-    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=now)
+    last_used_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    revoked_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
 
 
 class UserSession(Base):
@@ -218,8 +241,8 @@ class UserSession(Base):
 
     token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=now)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime())
 
 
 class Secret(Base):
@@ -232,7 +255,7 @@ class Secret(Base):
     workspace_id: Mapped[str | None] = mapped_column(String(32))
     name: Mapped[str] = mapped_column(String(100))
     ciphertext: Mapped[str] = mapped_column(Text)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=now)
 
 
 class ImportRun(Base):
@@ -242,8 +265,8 @@ class ImportRun(Base):
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("imp"))
     workspace_id: Mapped[str | None] = mapped_column(String(32), index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
-    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=now)
+    finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     source: Mapped[str] = mapped_column(String(20))  # langfuse | langsmith | braintrust | otlp_file | inspect_log
     project: Mapped[str | None] = mapped_column(String(300))
     options: Mapped[dict[str, Any]] = mapped_column(default=dict)
@@ -266,7 +289,7 @@ class Dataset(Base):
     workspace_id: Mapped[str | None] = mapped_column(String(32), index=True)
     name: Mapped[str] = mapped_column(String(200))
     description: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=now)
 
 
 class DatasetItem(Base):
@@ -289,8 +312,8 @@ class DatasetItem(Base):
     usage_rights: Mapped[str] = mapped_column(String(20), default="unknown")
     provenance: Mapped[dict[str, Any]] = mapped_column(default=dict)
     notes: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
-    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=now)
+    reviewed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     reviewed_by: Mapped[str | None] = mapped_column(String(200))
 
 
@@ -301,7 +324,7 @@ class IngestBatch(Base):
 
     batch_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     workspace_id: Mapped[str | None] = mapped_column(String(32), index=True)
-    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    received_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=now)
     span_count: Mapped[int] = mapped_column(Integer, default=0)
 
 
@@ -316,10 +339,10 @@ class Job(Base):
     target_id: Mapped[str] = mapped_column(String(32), index=True)
     # queued | running | done | failed
     status: Mapped[str] = mapped_column(String(10), default="queued")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
-    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=now)
+    started_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    heartbeat_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     worker: Mapped[str | None] = mapped_column(String(100))
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     error: Mapped[str | None] = mapped_column(Text)
