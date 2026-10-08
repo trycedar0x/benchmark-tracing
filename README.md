@@ -1,5 +1,6 @@
 # everyeval
 
+[![PyPI](https://img.shields.io/pypi/v/everyeval.svg)](https://pypi.org/project/everyeval/)
 [![CI](https://github.com/trycedar0x/benchmark-tracing/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/trycedar0x/benchmark-tracing/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](pyproject.toml)
@@ -18,17 +19,19 @@ everyeval reuses existing evaluation tools instead of rebuilding them: [Inspect 
 
 ## Quick start (offline, no API keys)
 
-```bash
-git clone https://github.com/trycedar0x/benchmark-tracing && cd benchmark-tracing
-uv sync
+Nothing to install with [uv](https://docs.astral.sh/uv/):
 
-uv run everyeval catalog
-uv run everyeval run toy-arith -m mock/strong -m mock/weak
-uv run everyeval compare <run-a> <run-b>
-uv run everyeval trace <run-b> arith-001
+```bash
+uvx everyeval catalog
+uvx everyeval run toy-arith -m mock/strong -m mock/weak
+uvx everyeval compare <run-a> <run-b>
+uvx everyeval trace <run-b> arith-001
+uvx everyeval serve                                 # web UI at http://127.0.0.1:8321
 ```
 
 ![Terminal: comparing two runs, printing the span tree of a failed task, and diffing the two runs' trajectories to the step where they diverged](docs/media/cli-compare-trace-diff.gif)
+
+To install it instead, run `uv tool install everyeval` or `pip install everyeval`. From a clone, run `uv sync` and prefix commands with `uv run`, as the rest of this README does.
 
 `mock/*` models are deterministic mock models bundled for demos and tests. `toy-arith` and `toy-tools` are bundled benchmarks; `toy-tools` exercises tool calls.
 
@@ -37,7 +40,7 @@ New here? The [user guide](docs/guide.md) walks through reading comparisons, tra
 ## Real models and benchmarks
 
 ```bash
-uv sync --extra benchmarks            # installs inspect_evals
+uv sync --extra benchmarks            # installs inspect_evals; or: uv tool install --python 3.12 "everyeval[benchmarks]"
 export OPENAI_API_KEY=...             # or any provider Inspect supports
 
 uv run everyeval quote create gsm8k -m openai/gpt-4o-mini -m anthropic/claude-haiku-4-5 --limit 200
@@ -54,7 +57,7 @@ Commands that call paid models ask for confirmation, or take `--yes`.
 Agent benchmarks (Terminal-Bench, SWE-bench Verified, Aider Polyglot) run through [Harbor](https://github.com/laude-institute/harbor) in Docker sandboxes. Each trial becomes a sample with its reward, tokens, cost and an ATIF trajectory converted into model and tool spans.
 
 ```bash
-uv sync --extra harbor
+uv sync --extra harbor                # or: uv tool install --python 3.12 "everyeval[harbor]"
 uv run everyeval run harbor-smoke -m oracle -m nop                 # bundled tasks, no API keys
 uv run everyeval run terminal-bench -m terminus-2:openai/gpt-4o --limit 10 --yes
 ```
@@ -82,7 +85,7 @@ The UI is built with [shadcn/ui](https://ui.shadcn.com) (Nova preset). Browser s
 
 ## Tracing your own agent
 
-Send traces from your own code with the SDK, or point any OpenTelemetry OTLP/HTTP exporter at `/v1/traces`. Spans from OpenInference and GenAI-semantic-convention instrumentations (OpenAI, Anthropic, LangChain and others) are mapped to model, tool and agent steps.
+Send traces from your own code with the SDK (`pip install everyeval`), or point any OpenTelemetry OTLP/HTTP exporter at `/v1/traces`. Spans from OpenInference and GenAI-semantic-convention instrumentations (OpenAI, Anthropic, LangChain and others) are mapped to model, tool and agent steps.
 
 ```python
 from everyeval.sdk import EveryEval
