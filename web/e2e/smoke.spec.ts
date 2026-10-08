@@ -15,7 +15,7 @@ async function visit(page: Page, path: string, name: string, text: RegExp) {
 test('core pages render without errors', async ({ page, request }) => {
   // Start two offline runs through the UI's API and wait for them.
   const started = await (
-    await request.post('/api/runs', { data: { benchmark: 'toy-tools', models: ['btmock/strong', 'btmock/flaky'] } })
+    await request.post('/api/runs', { data: { benchmark: 'toy-tools', models: ['mock/strong', 'mock/flaky'] } })
   ).json()
   const ids: string[] = started.map((r: { id: string }) => r.id)
   for (const id of ids) {
@@ -36,7 +36,7 @@ test('core pages render without errors', async ({ page, request }) => {
 
   const traceId = [...crypto.getRandomValues(new Uint8Array(16))].map((x) => x.toString(16).padStart(2, '0')).join('')
   await request.post('/v1/traces', {
-    headers: { 'Content-Type': 'application/json', 'x-benchtrace-source': 'sdk' },
+    headers: { 'Content-Type': 'application/json', 'x-everyeval-source': 'sdk' },
     data: {
       resourceSpans: [
         {
@@ -69,12 +69,12 @@ test('quote, approve and run from the UI', async ({ page }) => {
   await page.locator('#cap').fill('1')
   await page.getByRole('button', { name: 'Approve and run' }).click()
   await expect(page).toHaveURL(/\/$/)
-  await expect(page.getByText('btmock/weak').first()).toBeVisible()
+  await expect(page.getByText('mock/weak').first()).toBeVisible()
 })
 
 test('draft, review and approve dataset items from run failures', async ({ page, request }) => {
   const [run] = await (
-    await request.post('/api/runs', { data: { benchmark: 'toy-arith', models: ['btmock/weak'], limit: 12 } })
+    await request.post('/api/runs', { data: { benchmark: 'toy-arith', models: ['mock/weak'], limit: 12 } })
   ).json()
   await expect
     .poll(async () => (await (await request.get(`/api/runs/${run.id}`)).json()).status, { timeout: 60_000 })
@@ -87,7 +87,10 @@ test('draft, review and approve dataset items from run failures', async ({ page,
 
   await page.goto('/datasets')
   await page.getByRole('link', { name: `misses ${run.id}` }).click()
-  await page.getByRole('button', { name: /Use benchmark target/ }).first().click()
+  await page
+    .getByRole('button', { name: /Use benchmark target/ })
+    .first()
+    .click()
   await page.getByRole('button', { name: 'Approve' }).first().click()
   await expect(page.getByText(/Cannot approve: no split/)).toBeVisible()
   await page.getByRole('combobox', { name: 'Split' }).first().click()

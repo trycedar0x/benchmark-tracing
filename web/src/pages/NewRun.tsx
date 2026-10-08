@@ -14,7 +14,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { errorMessage, money, num } from '@/lib/format'
 import { api, type Quote } from '../api'
 
-const MOCK = 'btmock/'
+const MOCK = 'mock/'
 
 export default function NewRunPage() {
   const navigate = useNavigate()
@@ -22,7 +22,7 @@ export default function NewRunPage() {
   const models = useQuery({ queryKey: ['models'], queryFn: api.models })
 
   const [benchmark, setBenchmark] = useState('toy-arith@1')
-  const [modelText, setModelText] = useState('btmock/strong\nbtmock/weak')
+  const [modelText, setModelText] = useState('mock/strong\nmock/weak')
   const [limit, setLimit] = useState('')
   const [epochs, setEpochs] = useState('1')
   const [content, setContent] = useState('full')

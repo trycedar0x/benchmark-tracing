@@ -57,7 +57,7 @@ export default function RunsPage() {
             </EmptyMedia>
             <EmptyTitle>No runs yet</EmptyTitle>
             <EmptyDescription>
-              Try toy-arith with btmock/strong and btmock/weak. It runs offline with no API keys.
+              Try toy-arith with mock/strong and mock/weak. It runs offline with no API keys.
             </EmptyDescription>
           </EmptyHeader>
           <EmptyContent>

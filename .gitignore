@@ -10,7 +10,7 @@ build/
 
 # Local state and scratch
 .scratch/
-.benchtrace/
+.everyeval/
 *.db
 *.eval
 
@@ -28,9 +28,12 @@ docs/architecture-overview.html
 .env
 
 # Built web UI (npm --prefix web run build)
-src/benchtrace/static/
+src/everyeval/static/
 web/test-results/
 web/playwright-report/
 
-# Demo walkthrough videos from scripts/demo/record.sh: too large for git, upload them where needed
-docs/media/ui-walkthrough.*
+# Demo media from scripts/demo/record.sh. Only the files the README shows are committed.
+docs/media/*
+!docs/media/ui-2-compare.png
+!docs/media/cli-compare-trace-diff.gif
+!docs/media/ui-9-openai-agents-trace.png

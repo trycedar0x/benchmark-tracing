@@ -1,13 +1,13 @@
 """Start two runs over the HTTP API, wait for them, and fail when the candidate regresses.
 
-    uv run benchtrace serve                      # in another terminal
+    uv run everyeval serve                      # in another terminal
     uv run python examples/api_regression_gate.py
     uv run python examples/api_regression_gate.py --benchmark gsm8k@1 \
         --baseline openai/gpt-4o-mini --candidate anthropic/claude-haiku-4-5 --limit 50
 
-Uses only the standard library, so it also works from CI images without benchtrace installed.
-With authentication on, set BENCHTRACE_API_KEY to a bt_... key. Paid models need an approved
-quote over the API unless the server sets BENCHTRACE_REQUIRE_QUOTE=0.
+Uses only the standard library, so it also works from CI images without everyeval installed.
+With authentication on, set EVERYEVAL_API_KEY to a bt_... key. Paid models need an approved
+quote over the API unless the server sets EVERYEVAL_REQUIRE_QUOTE=0.
 """
 
 from __future__ import annotations
@@ -20,13 +20,13 @@ import time
 import urllib.error
 import urllib.request
 
-URL = os.environ.get("BENCHTRACE_URL", "http://127.0.0.1:8321").rstrip("/")
+URL = os.environ.get("EVERYEVAL_URL", "http://127.0.0.1:8321").rstrip("/")
 FINISHED = {"succeeded", "failed", "cancelled", "budget_exceeded"}
 
 
 def api(method: str, path: str, body: dict | None = None):
     headers = {"Content-Type": "application/json"}
-    if key := os.environ.get("BENCHTRACE_API_KEY"):
+    if key := os.environ.get("EVERYEVAL_API_KEY"):
         headers["Authorization"] = f"Bearer {key}"
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(URL + path, data=data, headers=headers, method=method)
@@ -40,8 +40,8 @@ def api(method: str, path: str, body: dict | None = None):
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--benchmark", default="toy-arith")
-    parser.add_argument("--baseline", default="btmock/strong")
-    parser.add_argument("--candidate", default="btmock/weak")
+    parser.add_argument("--baseline", default="mock/strong")
+    parser.add_argument("--candidate", default="mock/weak")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--max-drop", type=float, default=0.0, help="Allowed drop in score, e.g. 0.02 for 2 points.")
     args = parser.parse_args()
@@ -61,7 +61,7 @@ def main() -> None:
             break
         time.sleep(2)
     if any(r["status"] != "succeeded" for r in states.values()):
-        sys.exit("A run did not succeed; see `benchtrace show <run>`.")
+        sys.exit("A run did not succeed; see `everyeval show <run>`.")
 
     result = api("GET", f"/api/compare?a={a}&b={b}")
     if not result["compatibility"]["comparable"]:
@@ -77,7 +77,7 @@ def main() -> None:
     )
     regressions = [r["sample_id"] for r in result["rows"] if r["change"] == "regression"]
     print(f"Regressed samples: {', '.join(regressions) or 'none'}")
-    print(f"Inspect one: benchtrace diff {a} {b} <sample>")
+    print(f"Inspect one: everyeval diff {a} {b} <sample>")
 
     # Fail only when the whole confidence interval is below the allowed drop: a clear regression, not noise.
     if high < -args.max_drop:

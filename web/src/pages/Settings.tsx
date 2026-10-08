@@ -41,7 +41,7 @@ function ApiKeys({ me }: { me: Me }) {
       <CardContent className="grid gap-4">
         {!me.auth_enabled ? (
           <p className="text-sm text-muted-foreground">
-            Authentication is off (local mode). Start the server with BENCHTRACE_AUTH=1 to use keys.
+            Authentication is off (local mode). Start the server with EVERYEVAL_AUTH=1 to use keys.
           </p>
         ) : (
           <>
@@ -183,7 +183,7 @@ function Secrets({ me }: { me: Me }) {
                 Save
               </Button>
             </FieldGroup>
-            <FieldDescription className="mt-2">Requires BENCHTRACE_SECRET_KEY on the server.</FieldDescription>
+            <FieldDescription className="mt-2">Requires EVERYEVAL_SECRET_KEY on the server.</FieldDescription>
           </form>
         )}
         {(save.error || secrets.error) && (

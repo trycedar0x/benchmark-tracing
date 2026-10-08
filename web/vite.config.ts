@@ -3,12 +3,12 @@ import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 
-// Builds into the Python package so `benchtrace serve` ships the UI.
+// Builds into the Python package so `everyeval serve` ships the UI.
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: { alias: { '@': path.resolve(__dirname, './src') } },
   build: {
-    outDir: '../src/benchtrace/static',
+    outDir: '../src/everyeval/static',
     emptyOutDir: true,
   },
   server: {

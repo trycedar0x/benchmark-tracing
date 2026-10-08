@@ -13,9 +13,9 @@ import pytest
 import uvicorn
 from sqlalchemy import select
 
-from benchtrace.db import Span, Trace, session_scope
-from benchtrace.sdk import Benchtrace
-from benchtrace.server import create_app
+from everyeval.db import Span, Trace, session_scope
+from everyeval.sdk import EveryEval
+from everyeval.server import create_app
 
 
 def free_port() -> int:
@@ -49,17 +49,17 @@ def server():
         yield s
 
 
-def client(url: str, tmp_path, **kwargs) -> Benchtrace:
-    return Benchtrace(url, spool_dir=tmp_path / "spool", set_global=False, flush_interval=0.05, **kwargs)
+def client(url: str, tmp_path, **kwargs) -> EveryEval:
+    return EveryEval(url, spool_dir=tmp_path / "spool", set_global=False, flush_interval=0.05, **kwargs)
 
 
-def emit(bt: Benchtrace, name: str = "task") -> str:
-    with bt.trace(name, task_id="q1") as root:
-        with bt.span("plan", kind="model", **{"gen_ai.request.model": "demo"}) as s:
-            bt.record(s, "prompt", "What is 2+2? key sk-abcdefghijklmnopqrstuvwx")
-            bt.record(s, "output", "4")
-        with bt.span("calculator", kind="tool") as s:
-            bt.record(s, "arguments", {"expression": "2+2"})
+def emit(ee: EveryEval, name: str = "task") -> str:
+    with ee.trace(name, task_id="q1") as root:
+        with ee.span("plan", kind="model", **{"gen_ai.request.model": "demo"}) as s:
+            ee.record(s, "prompt", "What is 2+2? key sk-abcdefghijklmnopqrstuvwx")
+            ee.record(s, "output", "4")
+        with ee.span("calculator", kind="tool") as s:
+            ee.record(s, "arguments", {"expression": "2+2"})
         trace_id = format(root.get_span_context().trace_id, "032x")
     return trace_id
 
@@ -72,9 +72,9 @@ def stored(trace_id: str) -> tuple[Trace, list[Span]]:
 
 
 def test_sdk_delivers_and_seals_with_metadata_only_by_default(server, tmp_path):
-    bt = client(server.url, tmp_path)
-    trace_id = emit(bt)
-    health = bt.close(timeout=10)
+    ee = client(server.url, tmp_path)
+    trace_id = emit(ee)
+    health = ee.close(timeout=10)
     assert health.pending_batches == 0 and health.rejected_batches == 0
     receipt = health.receipts[trace_id]
     assert receipt == {"trace_id": trace_id, "expected_spans": 3, "received_spans": 3, "state": "closed"}
@@ -85,22 +85,22 @@ def test_sdk_delivers_and_seals_with_metadata_only_by_default(server, tmp_path):
 
 
 def test_server_policy_caps_client_policy(server, tmp_path, monkeypatch):
-    bt = client(server.url, tmp_path, content="full")
-    trace_id = emit(bt)
-    bt.close(timeout=10)
+    ee = client(server.url, tmp_path, content="full")
+    trace_id = emit(ee)
+    ee.close(timeout=10)
     _, spans = stored(trace_id)
     assert all(s.content is None for s in spans)  # server default is metadata
 
 
 def test_redacted_content_when_server_allows(tmp_path, monkeypatch):
-    monkeypatch.setenv("BENCHTRACE_INGEST_CONTENT", "full")
+    monkeypatch.setenv("EVERYEVAL_INGEST_CONTENT", "full")
     with LiveServer(free_port()) as srv:
-        bt = client(srv.url, tmp_path, content="redacted")
-        trace_id = emit(bt)
-        bt.close(timeout=10)
+        ee = client(srv.url, tmp_path, content="redacted")
+        trace_id = emit(ee)
+        ee.close(timeout=10)
     _, spans = stored(trace_id)
     model = next(s for s in spans if s.kind == "model")
-    prompt = model.content["benchtrace.content.prompt"]
+    prompt = model.content["everyeval.content.prompt"]
     assert "What is 2+2?" in prompt and "sk-abcdef" not in prompt and "[REDACTED:openai_key]" in prompt
 
 
@@ -109,10 +109,10 @@ def test_spans_survive_a_crash_and_are_delivered_later(tmp_path):
     url = f"http://127.0.0.1:{port}"
     script = textwrap.dedent(f"""
         import os, sys
-        from benchtrace.sdk import Benchtrace
-        bt = Benchtrace({url!r}, spool_dir={str(tmp_path / "spool")!r}, set_global=False, flush_interval=0.05)
-        with bt.trace("crashy") as root:
-            with bt.span("step", kind="tool"):
+        from everyeval.sdk import EveryEval
+        ee = EveryEval({url!r}, spool_dir={str(tmp_path / "spool")!r}, set_global=False, flush_interval=0.05)
+        with ee.trace("crashy") as root:
+            with ee.span("step", kind="tool"):
                 pass
         print(format(root.get_span_context().trace_id, "032x"), flush=True)
         os._exit(1)  # crash before anything could be delivered (no server is running)
@@ -123,8 +123,8 @@ def test_spans_survive_a_crash_and_are_delivered_later(tmp_path):
     assert any((tmp_path / "spool").rglob("*.otlp"))
 
     with LiveServer(port):
-        bt = client(url, tmp_path)
-        health = bt.close(timeout=15)
+        ee = client(url, tmp_path)
+        health = ee.close(timeout=15)
     assert health.pending_batches == 0
     trace, spans = stored(trace_id)
     assert len(spans) == 2 and trace.state == "closed"
@@ -144,10 +144,10 @@ def test_retried_batch_is_not_stored_twice(server, tmp_path):
             server.url + "/v1/traces",
             data=data,
             method="POST",
-            headers={"Content-Type": "application/x-protobuf", "x-benchtrace-batch-id": batch_id},
+            headers={"Content-Type": "application/x-protobuf", "x-everyeval-batch-id": batch_id},
         )
         with urllib.request.urlopen(req) as resp:
-            return resp.headers["x-benchtrace-duplicate"]
+            return resp.headers["x-everyeval-duplicate"]
 
     assert post() == "false"
     assert post() == "true"
@@ -156,33 +156,33 @@ def test_retried_batch_is_not_stored_twice(server, tmp_path):
 
 
 def test_trace_that_raises_is_still_sealed(server, tmp_path):
-    bt = client(server.url, tmp_path)
+    ee = client(server.url, tmp_path)
     with pytest.raises(ZeroDivisionError):
-        with bt.trace("fails") as root:
-            with bt.span("divide", kind="tool"):
+        with ee.trace("fails") as root:
+            with ee.span("divide", kind="tool"):
                 raise ZeroDivisionError("division by zero")
     trace_id = format(root.get_span_context().trace_id, "032x")
-    health = bt.close(timeout=10)
+    health = ee.close(timeout=10)
     assert health.receipts[trace_id]["state"] == "closed"
     trace, spans = stored(trace_id)
     assert trace.state == "closed" and {s.status for s in spans} == {"error"}
 
 
 def test_rejected_batch_is_set_aside_and_reported(server, tmp_path):
-    bt = client(server.url, tmp_path)
-    bt.spool.write(b"not a protobuf \xff\xfe", ".otlp")
-    trace_id = emit(bt)
-    health = bt.close(timeout=10)
+    ee = client(server.url, tmp_path)
+    ee.spool.write(b"not a protobuf \xff\xfe", ".otlp")
+    trace_id = emit(ee)
+    health = ee.close(timeout=10)
     assert health.rejected_batches == 1 and "rejected" in health.last_error
     assert list((tmp_path / "spool").rglob("rejected/*.otlp"))
     assert stored(trace_id)[0].state == "closed"
 
 
 def test_full_spool_refuses_spans_visibly(tmp_path):
-    bt = client("http://127.0.0.1:9", tmp_path, max_spool_bytes=10)
-    emit(bt)
-    bt.processor.force_flush()
-    health = bt.close(timeout=1)
+    ee = client("http://127.0.0.1:9", tmp_path, max_spool_bytes=10)
+    emit(ee)
+    ee.processor.force_flush()
+    health = ee.close(timeout=1)
     assert health.refused_spans > 0 and "full" in health.last_error
 
 
@@ -220,7 +220,7 @@ def test_otlp_json_with_openinference_kinds(server):
         headers={"Content-Type": "application/json"},
     )
     with urllib.request.urlopen(req) as resp:
-        assert json.load(resp)["benchtrace"]["accepted_spans"] == 1
+        assert json.load(resp)["everyeval"]["accepted_spans"] == 1
     trace, [span] = stored("5b8efff798038103d269b633813fc60c")
     assert span.kind == "model" and span.attributes["gen_ai.usage.input_tokens"] == 12
     assert span.content is None and span.content_state == "withheld"
