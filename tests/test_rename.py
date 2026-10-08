@@ -22,6 +22,7 @@ def test_old_data_folder_is_used_until_the_new_one_exists(tmp_path, monkeypatch)
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.delenv("EVERYEVAL_HOME")
     monkeypatch.delenv("BENCHTRACE_HOME", raising=False)
+    monkeypatch.delenv("EVERYEVAL_DATABASE_URL", raising=False)  # set when the suite runs on Postgres
     assert home_dir() == tmp_path / ".everyeval"
     (tmp_path / ".benchtrace").mkdir()
     (tmp_path / ".benchtrace" / "benchtrace.db").touch()
