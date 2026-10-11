@@ -2,7 +2,7 @@
 
 This guide walks you through benchtrace from a first offline run to tracing your own agent and gating CI on regressions. Every command here runs without API keys unless a section says otherwise. For a reference of every command and option, see the [README](../README.md) and `benchtrace --help`.
 
-Runnable versions of the examples are in [`examples/`](../examples).
+Runnable versions of the examples are in [`examples/`](../examples). Building a customer support agent? [Shipping a retail support agent](retail-agent-guide.md) walks through benchmarking and tracing one end to end.
 
 ## Contents
 
@@ -203,6 +203,7 @@ from benchtrace.sdk import Benchtrace
 bt = Benchtrace("http://127.0.0.1:8321", content="full")
 client = Anthropic()
 
+
 def answer(ticket_id: str, question: str) -> str:
     with bt.trace("answer-ticket", task_id=ticket_id):
         with bt.span("call-model", kind="model", **{"gen_ai.request.model": "claude-haiku-4-5"}) as span:
@@ -216,9 +217,10 @@ def answer(ticket_id: str, question: str) -> str:
             bt.record(span, "output", text)
         return text
 
+
 answer("t-1", "How do I reset my password?")
-health = bt.flush()          # wait for delivery
-print(health.receipts)       # {trace_id: {"state": "closed", "expected_spans": 2, "received_spans": 2}}
+health = bt.flush()  # wait for delivery
+print(health.receipts)  # {trace_id: {"state": "closed", "expected_spans": 2, "received_spans": 2}}
 ```
 
 Tips:
@@ -270,10 +272,12 @@ from benchtrace.sdk import Benchtrace
 bt = Benchtrace("http://127.0.0.1:8321", content="full")
 OpenAIAgentsInstrumentor().instrument(tracer_provider=bt.provider)
 
+
 @function_tool
 def lookup_order(order_id: str) -> str:
     """Look up the status of an order by its id."""
     return ORDERS.get(order_id, "no order with that id")
+
 
 agent = Agent(name="support-agent", instructions="...", model="gpt-4o-mini", tools=[lookup_order])
 with bt.trace("support-ticket", task_id="t-1"):
@@ -328,6 +332,18 @@ trace 0c9853dc9ff4e98d4a6dfdc22ac9a5b9 · sdk          (LangChain)
 ```
 
 Two details are worth knowing. Passing `tracer_provider=bt.provider` makes it explicit which provider the instrumentation reports to, which matters when your app already configures OpenTelemetry itself. And the Agents SDK instrumentation by default replaces the SDK's own export to the OpenAI traces dashboard; pass `exclusive_processor=False` to `instrument()` to keep both.
+
+### Scoring your own agent on an agent benchmark
+
+Tracing shows what your agent did; a benchmark tells you whether it did it right. Agent benchmarks that run through Harbor accept your own agent: write a Harbor agent class and pass its import path with `--agent`. benchtrace runs it on the benchmark's tasks, turns each conversation into a trace, and compares it with another agent task by task:
+
+```bash
+uv run benchtrace run tau3-retail -m openai/gpt-5-mini --agent examples.tau3_agents.harbor_agents:PlainRetailAgent --limit 20 --yes
+uv run benchtrace run tau3-retail -m openai/gpt-5-mini --agent examples.tau3_agents.harbor_agents:RetailSupportAgent --limit 20 --yes
+uv run benchtrace compare <plain-run> <agent-run>
+```
+
+The agent is part of the run, not the benchmark variant, so runs with different agents on the same variant compare directly. `--agent` is resolved from the current directory and runs local code, so it is a CLI option only; the HTTP API does not accept it. [`examples/tau3_agents`](../examples/tau3_agents) is a complete example with a retail support agent on the OpenAI Agents SDK and a bank support agent on LangGraph, on tau3-bench.
 
 ## 7. Sending traces from other languages
 

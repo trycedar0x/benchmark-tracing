@@ -64,6 +64,7 @@ def _run_summary(run: Run) -> dict[str, Any]:
         "id": run.id,
         "benchmark": run.benchmark,
         "model": run.model,
+        "agent": run.agent,
         "status": run.status,
         "resolved_models": run.resolved_models,
         "samples_done": run.samples_done,
@@ -93,6 +94,13 @@ def check_compatibility(a: Run, b: Run, a_keys: set, b_keys: set) -> Compatibili
         c.blocking.append(
             f"Task contents changed between runs for {len(changed)} task(s), e.g. {changed[0]}; "
             "the Harbor dataset version differs."
+        )
+    revs_a = ((a.manifest or {}).get("harbor") or {}).get("benchmark_revisions") or {}
+    revs_b = ((b.manifest or {}).get("harbor") or {}).get("benchmark_revisions") or {}
+    if revs_a and revs_b and set(revs_a.values()) != set(revs_b.values()):
+        c.blocking.append(
+            f"Benchmark code differs between runs ({', '.join(sorted(set(revs_a.values())))} vs "
+            f"{', '.join(sorted(set(revs_b.values())))}); rebuild both on the same revision."
         )
     if a.epochs != b.epochs:
         c.warnings.append(f"Different epochs ({a.epochs} vs {b.epochs}); only shared epochs are paired.")

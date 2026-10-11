@@ -18,6 +18,14 @@ class CatalogError(LookupError):
     pass
 
 
+class TaskPatch(BaseModel):
+    """A text replacement applied to a downloaded Harbor dataset, e.g. to pin a dependency's version."""
+
+    files: str  # glob relative to each task directory
+    old: str
+    new: str
+
+
 class BenchmarkEntry(BaseModel):
     id: str
     version: int
@@ -34,6 +42,11 @@ class BenchmarkEntry(BaseModel):
     sandbox: str | None = None
     offline: bool = False
     agent: str | None = None  # default Harbor agent
+    task_filter: list[str] = Field(default_factory=list)  # Harbor task-name globs selecting a subset
+    env: dict[str, str] = Field(default_factory=dict)  # pinned environment, e.g. a simulated user's model
+    env_defaults: dict[str, str] = Field(default_factory=dict)  # used only when unset; not part of the identity
+    patches: list[TaskPatch] = Field(default_factory=list)  # applied to a local copy of a Harbor dataset
+    custom_agents: bool = False  # accepts `benchtrace run --agent <import path>`
     description: str | None = None
     notes: str | None = None
 
@@ -55,6 +68,13 @@ class BenchmarkEntry(BaseModel):
             "task_args": self.task_args,
             "grader": self.grader,
         }
+        # Added only when set, so entries without them keep their existing keys.
+        if self.task_filter:
+            identity["task_filter"] = self.task_filter
+        if self.env:
+            identity["env"] = self.env
+        if self.patches:
+            identity["patches"] = [patch.model_dump() for patch in self.patches]
         return hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()[:16]
 
 

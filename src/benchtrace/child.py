@@ -139,10 +139,13 @@ def run_child(run_id: str) -> int:
         run.started_at = now()
         run.manifest = {**(run.manifest or {}), "versions": _versions(), "platform": platform.platform()}
         model, limit, epochs, budget = run.model, run.limit, run.epochs, run.budget_usd
+        custom_agent, agent_path = run.agent, (run.manifest or {}).get("agent_path")
 
     STATE.run_id, STATE.model, STATE.budget = run_id, model, budget
     if entry.adapter == "harbor":
-        return _run_harbor_child(run_id, entry, model, limit, epochs, budget, cfg.logs_dir / run_id)
+        return _run_harbor_child(
+            run_id, entry, model, limit, epochs, budget, cfg.logs_dir / run_id, custom_agent, agent_path
+        )
     log_dir = cfg.logs_dir / run_id
     status, error = "failed", None
     log: EvalLog | None = None
@@ -197,14 +200,17 @@ def run_child(run_id: str) -> int:
     return 0 if status == "succeeded" else 1
 
 
-def _run_harbor_child(run_id, entry, model, limit, epochs, budget, run_dir) -> int:
+def _run_harbor_child(run_id, entry, model, limit, epochs, budget, run_dir, custom_agent=None, agent_path=None) -> int:
     from benchtrace.harbor_adapter import run_harbor, split_model
 
     checksums: dict[str, str] = {}
+    revisions: dict[str, str] = {}
 
     def ingest(converted: dict[str, Any]) -> None:
         if converted.get("task_checksum"):
             checksums[converted["result"]["sample_id"]] = converted["task_checksum"]
+        if converted.get("benchmark_revision"):
+            revisions[converted["result"]["sample_id"]] = converted["benchmark_revision"]
         with session_scope() as session:
             store_sample(session, session.get(Run, run_id), converted)
 
@@ -216,9 +222,29 @@ def _run_harbor_child(run_id, entry, model, limit, epochs, budget, run_dir) -> i
 
     agent = None
     try:
-        agent, agent_model = split_model(model, entry.agent)
+        agent, agent_model = (custom_agent, model) if custom_agent else split_model(model, entry.agent)
+        task = entry.task
+        if entry.patches:
+            from benchtrace.config import settings
+            from benchtrace.harbor_adapter import patched_dataset_dir, prepare_patched_dataset
+
+            dest = patched_dataset_dir(settings().home / "harbor-datasets", entry.task, entry.patches)
+            task = str(prepare_patched_dataset(entry.task, entry.patches, dest))
         status, error = run_harbor(
-            run_id, entry.task, agent, agent_model, limit, epochs, budget, run_dir, ingest, record_cost
+            run_id,
+            task,
+            agent,
+            agent_model,
+            limit,
+            epochs,
+            budget,
+            run_dir,
+            ingest,
+            record_cost,
+            task_filter=entry.task_filter,
+            env=entry.env,
+            agent_path=agent_path,
+            env_defaults=entry.env_defaults,
         )
     except Exception as ex:  # noqa: BLE001 - record any failure on the run
         status, error = "failed", f"{type(ex).__name__}: {ex}"
@@ -229,7 +255,10 @@ def _run_harbor_child(run_id, entry, model, limit, epochs, budget, run_dir) -> i
         run.status = status
         run.finished_at = now()
         run.log_path = str(run_dir / "harbor-jobs")
-        run.manifest = {**(run.manifest or {}), "harbor": {"agent": agent, "task_checksums": checksums}}
+        run.manifest = {
+            **(run.manifest or {}),
+            "harbor": {"agent": agent, "task_checksums": checksums, "benchmark_revisions": revisions},
+        }
         if error:
             run.error = error
     return 0 if status == "succeeded" else 1

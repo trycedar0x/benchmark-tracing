@@ -1,0 +1,9 @@
+# What the agents install in the task container (see harbor_agents.py), for running their tests locally:
+#   uv run --isolated --no-project --with-editable . --with pytest \
+#     --with-requirements examples/tau3_agents/requirements.txt pytest tests/test_tau3_agents.py
+mcp==1.25.0
+openai==3.18.0
+openai-agents==0.22.3
+langgraph==1.2.12
+langchain-openai==1.6.4
+langchain-core==1.6.4

@@ -35,6 +35,19 @@ console = Console()
 err = Console(stderr=True)
 
 ModelOpt = Annotated[list[str], typer.Option("--model", "-m", help="Model to evaluate; repeat for several.")]
+AgentOpt = Annotated[
+    str | None,
+    typer.Option(
+        "--agent",
+        help="Your own agent for an agent benchmark, as an import path (package.module:AgentClass) "
+        "importable from the current directory. Runs local code.",
+    ),
+]
+
+
+def _who(model: str, agent: str | None) -> str:
+    """A run's model, with its custom agent's class name when there is one."""
+    return f"{model} · {agent.rsplit(':', 1)[-1]}" if agent else model
 
 
 def _fail(message: str, code: int = 1) -> None:
@@ -114,7 +127,8 @@ app.add_typer(quote_app, name="quote")
 
 
 def _print_quote(quote: Quote) -> None:
-    table = Table(title=f"Quote {quote.id} · {quote.benchmark} · {quote.samples_planned or '?'} samples planned")
+    agent = f" · agent {quote.agent}" if quote.agent else ""
+    table = Table(title=f"Quote {quote.id} · {quote.benchmark}{agent} · {quote.samples_planned or '?'} samples planned")
     for col in ("Model", "Sample", "Tokens in (est.)", "Tokens out (est.)", "Cost (est.)", "95% range", "Notes"):
         table.add_column(col)
     for model, est in quote.estimate.items():
@@ -142,6 +156,7 @@ def quote_create(
     model: ModelOpt,
     limit: Annotated[int | None, typer.Option(help="Plan to run only the first N samples.")] = None,
     sample_size: Annotated[int, typer.Option(help="Samples to run per model for the estimate.")] = 5,
+    agent: AgentOpt = None,
     yes: Annotated[bool, typer.Option("--yes", "-y", help="Approve paid calls for the sample run.")] = False,
 ) -> None:
     """Run a small sample and estimate tokens and cost for the full run."""
@@ -152,7 +167,7 @@ def quote_create(
     _confirm_paid(model, yes, f"The quote runs {sample_size} samples per model and")
     with console.status(f"Running {sample_size} sample(s) per model to estimate cost..."):
         try:
-            quote = create_quote(entry, model, limit=limit, sample_size=sample_size)
+            quote = create_quote(entry, model, limit=limit, sample_size=sample_size, agent=agent)
         except PlanError as ex:
             _fail(str(ex))
     _print_quote(quote)
@@ -201,7 +216,7 @@ def _progress_table(runs: dict[str, Run]) -> Table:
         )
         table.add_row(
             run.id,
-            run.model,
+            _who(run.model, run.agent),
             f"[{color}]{run.status}[/{color}]",
             progress,
             _pct(_accuracy(run)),
@@ -254,6 +269,7 @@ def run(
     epochs: Annotated[int, typer.Option(help="Repeat each sample N times.")] = 1,
     budget: Annotated[float | None, typer.Option(help="Budget cap in USD per run.")] = None,
     quote: Annotated[str | None, typer.Option(help="Run an approved quote.")] = None,
+    agent: AgentOpt = None,
     content: Annotated[str, typer.Option(help="Content policy: full, redacted, or metadata.")] = "full",
     sequential: Annotated[bool, typer.Option(help="Run models one after another.")] = False,
     yes: Annotated[bool, typer.Option("--yes", "-y", help="Approve paid model calls.")] = False,
@@ -261,13 +277,17 @@ def run(
     """Run a benchmark against one or more models, with live progress."""
     try:
         if quote:
+            if agent:
+                _fail("A quote fixes its agent; pass --agent to `quote create` instead.")
             runs = runs_from_quote(quote, content_policy=content, epochs=epochs)
         else:
             if not benchmark or not model:
                 _fail("Give a benchmark and at least one --model, or --quote.")
             entry = get_benchmark(benchmark)
             _confirm_paid(model, yes, "This run")
-            runs = create_runs(entry, model, limit=limit, epochs=epochs, budget_usd=budget, content_policy=content)
+            runs = create_runs(
+                entry, model, limit=limit, epochs=epochs, budget_usd=budget, content_policy=content, agent=agent
+            )
     except (CatalogError, PlanError, LookupError) as ex:
         _fail(str(ex))
 
@@ -314,7 +334,7 @@ def list_runs(
                 r.id,
                 r.created_at.strftime("%Y-%m-%d %H:%M"),
                 r.benchmark,
-                r.model,
+                _who(r.model, r.agent),
                 r.status,
                 f"{r.samples_done}/{r.samples_total or '?'}",
                 _pct(_accuracy(r)),
@@ -346,6 +366,7 @@ def show(
             ("benchmark", r.benchmark),
             ("variant", r.variant_key),
             ("model", r.model),
+            ("agent", r.agent or "catalog default"),
             ("resolved models", ", ".join(r.resolved_models or []) or "–"),
             ("status", r.status),
             ("samples", f"{r.samples_done}/{r.samples_total or '?'}"),
@@ -525,7 +546,9 @@ def compare(
         console.print("Not comparing. Pass --force for an exploratory comparison.")
         raise typer.Exit(2)
     a, b = result.run_a, result.run_b
-    summary = Table(title=f"{a['benchmark']}: A={a['model']} vs B={b['model']}")
+    summary = Table(
+        title=f"{a['benchmark']}: A={_who(a['model'], a.get('agent'))} vs B={_who(b['model'], b.get('agent'))}"
+    )
     for col in ("", "A", "B", "Δ (B−A)", "95% CI", "McNemar p"):
         summary.add_column(col)
     ci = result.delta_ci95

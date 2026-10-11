@@ -11,7 +11,7 @@ import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTi
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { ago, errorMessage, money, pct } from '@/lib/format'
+import { ago, errorMessage, money, pct, who } from '@/lib/format'
 import { api, TERMINAL } from '../api'
 
 export default function RunsPage() {
@@ -98,7 +98,7 @@ export default function RunsPage() {
                       </Link>
                     </TableCell>
                     <TableCell>{r.benchmark}</TableCell>
-                    <TableCell className="font-mono text-xs">{r.model}</TableCell>
+                    <TableCell className="font-mono text-xs">{who(r.model, r.agent)}</TableCell>
                     <TableCell>
                       <StatusBadge value={r.status} />
                     </TableCell>

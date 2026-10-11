@@ -51,7 +51,7 @@ uv run benchtrace run harbor-smoke -m oracle -m nop                 # bundled ta
 uv run benchtrace run terminal-bench -m terminus-2:openai/gpt-4o --limit 10 --yes
 ```
 
-Models take the form `agent:model`, or a bare model for the catalog's default agent. `oracle` (the reference solution) and `nop` (does nothing) are free. Harbor resolves registry datasets to their latest version. Every trial's task checksum is recorded, and runs whose task contents differ are blocked from direct comparison. With `--budget`, a run stops when Harbor-reported cost reaches the cap. Agent benchmarks pull large images; SWE-bench needs substantial disk space.
+Models take the form `agent:model`, or a bare model for the catalog's default agent. To benchmark your own agent, pass its Harbor agent class with `--agent package.module:AgentClass`; [`examples/tau3_agents`](examples/tau3_agents) has a retail support agent (OpenAI Agents SDK) and a bank support agent (LangGraph) scored on tau3-bench (2026), and [Shipping a retail support agent](docs/retail-agent-guide.md) walks through how a team uses benchtrace to test changes to one. `oracle` (the reference solution) and `nop` (does nothing) are free. Harbor resolves registry datasets to their latest version. Every trial's task checksum is recorded, and runs whose task contents differ are blocked from direct comparison. With `--budget`, a run stops when Harbor-reported cost reaches the cap. Agent benchmarks pull large images; SWE-bench needs substantial disk space.
 
 ## Web UI and server
 
@@ -71,11 +71,11 @@ Send traces from your own code with the SDK, or point any OpenTelemetry OTLP/HTT
 ```python
 from benchtrace.sdk import Benchtrace
 
-bt = Benchtrace("http://127.0.0.1:8321", content="metadata")   # or "redacted" / "full"
+bt = Benchtrace("http://127.0.0.1:8321", content="metadata")  # or "redacted" / "full"
 with bt.trace("answer-question", task_id="q-17"):
     with bt.span("call-model", kind="model", **{"gen_ai.request.model": "gpt-4o-mini"}) as span:
-        bt.record(span, "output", "...")                         # kept only if the policy allows
-print(bt.flush().receipts)                                       # per-trace receipt: expected vs received spans
+        bt.record(span, "output", "...")  # kept only if the policy allows
+print(bt.flush().receipts)  # per-trace receipt: expected vs received spans
 ```
 
 Delivery is crash-safe. The content policy is applied before anything touches disk. Every batch is written to a local spool (fsync and atomic rename) before it is sent, and is deleted only after the server acknowledges it. Batches left behind by a crash are sent by the next client for the same endpoint. Each batch has a stable id, so a retry after a lost acknowledgement is not stored twice. A full spool refuses new spans and reports them in `bt.health()` instead of silently dropping them. When a `trace` block exits, it seals the trace with its span count. The trace shows as `closed` once every span has arrived, or `incomplete` if some are missing. A closed trace means everything the producer declared was received. It does not prove the instrumentation was complete.

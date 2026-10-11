@@ -9,6 +9,14 @@ Model strings for Harbor benchmarks:
     terminus-2:openai/gpt-4o   agent terminus-2 driving openai/gpt-4o
     openai/gpt-4o              the catalog's default agent driving openai/gpt-4o
     oracle | nop               reference solution / do nothing (no model, no cost)
+
+A run's custom agent (`benchtrace run --agent package.module:AgentClass`) replaces the agent.
+
+Agents may report two optional fields in their result metadata:
+    environment_cost_usd   model spend outside the agent, such as a simulated user's;
+                           added to the trial's cost and counted against the budget
+    benchmark_revision     the benchmark code the trial ran against; runs on different
+                           revisions are blocked from direct comparison
 """
 
 from __future__ import annotations
@@ -92,7 +100,9 @@ def _trajectory_spans(
             message = "\n".join(p.get("text", "") for p in message if isinstance(p, dict))
         sid = _sid(trial_id, "step", step.get("step_id", i))
         if source == "agent":
-            model = step.get("model_name") or default_model
+            # Steps the agent's own code takes (ATIF llm_call_count 0) call tools without a model.
+            code_step = step.get("llm_call_count") == 0
+            model = None if code_step else step.get("model_name") or default_model
             if model:
                 models.add(model)
             metrics = step.get("metrics") or {}
@@ -101,8 +111,8 @@ def _trajectory_spans(
                 {
                     "span_id": sid,
                     "parent_id": parent,
-                    "name": model or "agent step",
-                    "kind": "model",
+                    "name": model or (step.get("extra") or {}).get("code_step") or "agent step",
+                    "kind": "span" if code_step else "model",
                     "status": "ok",
                     "start_time": t0,
                     "end_time": t1,
@@ -161,9 +171,23 @@ def _trajectory_spans(
     return spans, models, first_user, last_agent
 
 
-def convert_trial(trial_dir: Path, run_id: str, epoch: int = 1) -> dict[str, Any]:
-    """Convert one Harbor trial directory to {"result", "trace", "spans", "resolved_models"}."""
+def _agent_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
+    """The agent's own result metadata (stop reason, guard counts, ...) as `agent.*` span attributes."""
+    out = {}
+    for key, value in metadata.items():
+        if key in ("environment_cost_usd", "benchmark_revision") or value is None:
+            continue
+        out[f"agent.{key}"] = value if isinstance(value, str | int | float | bool) else json.dumps(value)
+    return out
+
+
+def convert_trial(trial_dir: Path, run_id: str, epoch: int = 1, model: str | None = None) -> dict[str, Any]:
+    """Convert one Harbor trial directory to {"result", "trace", "spans", "resolved_models"}.
+
+    Agents that report tokens but no cost are priced from benchtrace's price list for `model`.
+    """
     from benchtrace.inspect_convert import trace_id_for
+    from benchtrace.pricing import cost_for
 
     result = json.loads((trial_dir / "result.json").read_text())
     task = result.get("task_name") or trial_dir.name.split("__")[0]
@@ -172,6 +196,12 @@ def convert_trial(trial_dir: Path, run_id: str, epoch: int = 1) -> dict[str, Any
     reward = trial_reward(result)
     exception = result.get("exception_info")
     agent_result = result.get("agent_result") or {}
+    metadata = agent_result.get("metadata") or {}
+    agent_cost = agent_result.get("cost_usd")
+    if agent_cost is None and model and (agent_result.get("n_input_tokens") or agent_result.get("n_output_tokens")):
+        agent_cost = cost_for(model, agent_result.get("n_input_tokens") or 0, agent_result.get("n_output_tokens") or 0)
+    environment_cost = metadata.get("environment_cost_usd")
+    cost = None if agent_cost is None and environment_cost is None else (agent_cost or 0.0) + (environment_cost or 0.0)
     start, end = _ts(result.get("started_at")), _ts(result.get("finished_at"))
 
     if exception:
@@ -198,7 +228,11 @@ def convert_trial(trial_dir: Path, run_id: str, epoch: int = 1) -> dict[str, Any
                 "harbor.task_checksum": result.get("task_checksum"),
                 "outcome": outcome,
                 "score": reward,
-                "cost_usd": agent_result.get("cost_usd"),
+                "cost_usd": cost,
+                "agent_cost_usd": agent_cost,
+                "environment_cost_usd": environment_cost,
+                "benchmark_revision": metadata.get("benchmark_revision"),
+                **_agent_metadata(metadata),
             },
             "content": None,
         }
@@ -304,7 +338,7 @@ def convert_trial(trial_dir: Path, run_id: str, epoch: int = 1) -> dict[str, Any
         "attributes": {
             "resolved_models": sorted(models),
             "task_checksum": result.get("task_checksum"),
-            "cost_usd": agent_result.get("cost_usd"),
+            "cost_usd": cost,
         },
     }
     return {
@@ -312,17 +346,78 @@ def convert_trial(trial_dir: Path, run_id: str, epoch: int = 1) -> dict[str, Any
         "trace": trace,
         "spans": spans,
         "resolved_models": models,
-        "cost_usd": agent_result.get("cost_usd"),
+        "cost_usd": cost,
         "task_checksum": result.get("task_checksum"),
+        "benchmark_revision": metadata.get("benchmark_revision"),
     }
 
 
-def harbor_command(
-    task: str, agent: str, model: str | None, jobs_dir: Path, limit: int | None, epochs: int
-) -> list[str]:
+def _harbor_exe() -> str:
     exe = shutil.which("harbor", path=str(Path(sys.executable).parent) + os.pathsep + os.environ.get("PATH", ""))
     if exe is None:
         raise RuntimeError("Harbor is not installed. Install it with: uv sync --extra harbor")
+    return exe
+
+
+def patched_dataset_dir(root: Path, dataset: str, patches: list) -> Path:
+    """Cache location for a patched dataset, shared by catalog entries that patch it the same way."""
+    key = _sid(dataset, json.dumps([p.model_dump() for p in patches], sort_keys=True))
+    # No "__": Harbor joins agent, model and dataset names with it and splits them again.
+    return root / f"{dataset.replace('/', '--').replace('__', '--')}-{key}"
+
+
+def prepare_patched_dataset(dataset: str, patches: list, dest: Path) -> Path:
+    """Download a registry dataset once and apply the catalog's patches to a local copy.
+
+    Every patch must change every task it targets, so a dataset whose files changed upstream
+    fails here instead of silently running unpatched.
+    """
+    if (dest / ".benchtrace-patched").exists():
+        return dest
+    staging = dest.with_name(dest.name + ".staging")
+    shutil.rmtree(staging, ignore_errors=True)
+    staging.mkdir(parents=True)
+    for attempt in range(3):  # the registry API fails transiently now and then
+        done = subprocess.run(
+            [_harbor_exe(), "download", dataset, "-o", str(staging), "--overwrite"], capture_output=True, text=True
+        )
+        if done.returncode == 0:
+            break
+        time.sleep(5 * (attempt + 1))
+    if done.returncode != 0:
+        raise RuntimeError(f"harbor download {dataset} failed:\n{(done.stderr or done.stdout)[-1500:]}")
+    tasks = [p.parent for p in staging.rglob("task.toml")]
+    if not tasks:
+        raise RuntimeError(f"harbor download {dataset} produced no tasks")
+    for task in tasks:
+        for patch in patches:
+            targets = sorted(task.glob(patch.files))
+            changed = 0
+            for target in targets:
+                text = target.read_text()
+                if patch.old in text:
+                    target.write_text(text.replace(patch.old, patch.new))
+                    changed += 1
+            if not targets or changed != len(targets):
+                raise RuntimeError(f"Patch for {patch.files!r} did not apply to {task.name}; the dataset changed.")
+    root = tasks[0].parent if all(t.parent == tasks[0].parent for t in tasks) else staging
+    shutil.rmtree(dest, ignore_errors=True)
+    root.rename(dest)
+    shutil.rmtree(staging, ignore_errors=True)
+    (dest / ".benchtrace-patched").write_text(json.dumps([p.model_dump() for p in patches]))
+    return dest
+
+
+def harbor_command(
+    task: str,
+    agent: str,
+    model: str | None,
+    jobs_dir: Path,
+    limit: int | None,
+    epochs: int,
+    task_filter: list[str] | None = None,
+) -> list[str]:
+    exe = _harbor_exe()
     if task.startswith("bundled:"):
         source = ["-p", str(Path(str(resources.files("benchtrace") / task.removeprefix("bundled:"))))]
     elif task.startswith(("/", "./")):
@@ -332,9 +427,21 @@ def harbor_command(
     cmd = [exe, "run", *source, "-a", agent, "-o", str(jobs_dir), "-y", "-q", "-k", str(epochs)]
     if model:
         cmd += ["-m", model]
+    for pattern in task_filter or []:
+        cmd += ["-i", pattern]
     if limit:
         cmd += ["-l", str(limit)]
     return cmd
+
+
+def harbor_env(
+    env: dict[str, str] | None, agent_path: str | None, defaults: dict[str, str] | None = None
+) -> dict[str, str]:
+    """Harbor's environment: the catalog's defaults, ours, its pinned variables, and the custom agent's import root."""
+    out = {**(defaults or {}), **os.environ, **(env or {})}
+    if agent_path:
+        out["PYTHONPATH"] = os.pathsep.join(p for p in (agent_path, out.get("PYTHONPATH")) if p)
+    return out
 
 
 def run_harbor(
@@ -348,13 +455,19 @@ def run_harbor(
     run_dir: Path,
     ingest,
     record_cost,
+    task_filter: list[str] | None = None,
+    env: dict[str, str] | None = None,
+    agent_path: str | None = None,
+    env_defaults: dict[str, str] | None = None,
 ) -> tuple[str, str | None]:
     """Run Harbor, ingesting trials as they finish. Returns (status, error)."""
     jobs_dir = run_dir / "harbor-jobs"
     jobs_dir.mkdir(parents=True, exist_ok=True)
-    cmd = harbor_command(task, agent, model, jobs_dir, limit, epochs)
+    cmd = harbor_command(task, agent, model, jobs_dir, limit, epochs, task_filter)
     log = (run_dir / "harbor.log").open("ab")
-    proc = subprocess.Popen(cmd, stdout=log, stderr=log, cwd=run_dir, start_new_session=True)
+    proc = subprocess.Popen(
+        cmd, stdout=log, stderr=log, cwd=run_dir, env=harbor_env(env, agent_path, env_defaults), start_new_session=True
+    )
     seen: set[Path] = set()
     attempts: dict[str, int] = {}
     spent = 0.0
@@ -381,7 +494,7 @@ def run_harbor(
             seen.add(trial)
             task_name = data.get("task_name") or trial.name.split("__")[0]
             attempts[task_name] = attempts.get(task_name, 0) + 1
-            converted = convert_trial(trial, run_id, attempts[task_name])
+            converted = convert_trial(trial, run_id, attempts[task_name], model)
             ingest(converted)
             spent += converted.get("cost_usd") or 0.0
             record_cost(spent)
