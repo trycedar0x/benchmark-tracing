@@ -81,6 +81,8 @@ class Run(Base):
     benchmark: Mapped[str] = mapped_column(String(100), index=True)
     variant_key: Mapped[str] = mapped_column(String(64))
     model: Mapped[str] = mapped_column(String(200))
+    # Custom agent import path (module:Class) for agent benchmarks; None runs the catalog's agent.
+    agent: Mapped[str | None] = mapped_column(String(300))
     resolved_models: Mapped[list[Any]] = mapped_column(default=list)
     limit: Mapped[int | None] = mapped_column(Integer)
     epochs: Mapped[int] = mapped_column(Integer, default=1)
@@ -183,6 +185,7 @@ class Quote(Base):
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=now)
     benchmark: Mapped[str] = mapped_column(String(100))
     models: Mapped[list[Any]] = mapped_column(default=list)
+    agent: Mapped[str | None] = mapped_column(String(300))
     limit: Mapped[int | None] = mapped_column(Integer)
     sample_size: Mapped[int] = mapped_column(Integer)
     samples_planned: Mapped[int | None] = mapped_column(Integer)

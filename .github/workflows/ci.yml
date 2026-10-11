@@ -24,11 +24,23 @@ jobs:
       - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v6
       - run: uv sync --all-extras
-      - run: uv run ruff check src tests
+      - run: uv run ruff check src tests examples
       - name: Tests
         run: uv run pytest -q
         env:
           EVERYEVAL_TEST_POSTGRES: ${{ matrix.database == 'postgres' && 'postgresql+psycopg://postgres:bt@localhost:5432/postgres' || '' }}
+
+  tau3-agents:
+    # The example agents' frameworks need openai>=3, which conflicts with the harbor extra, so their
+    # tests run in an environment with the same pins the agents install in the task container.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+      - name: Agent tests with the pinned frameworks
+        run: >-
+          uv run --isolated --no-project --with-editable . --with pytest
+          --with-requirements examples/tau3_agents/requirements.txt pytest -q tests/test_tau3_agents.py
 
   web:
     runs-on: ubuntu-latest

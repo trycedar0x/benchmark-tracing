@@ -62,7 +62,7 @@ uv run everyeval run harbor-smoke -m oracle -m nop                 # bundled tas
 uv run everyeval run terminal-bench -m terminus-2:openai/gpt-4o --limit 10 --yes
 ```
 
-Models take the form `agent:model`, or a bare model for the catalog's default agent. `oracle` (the reference solution) and `nop` (does nothing) are free. Harbor resolves registry datasets to their latest version. Every trial's task checksum is recorded, and runs whose task contents differ are blocked from direct comparison. With `--budget`, a run stops when Harbor-reported cost reaches the cap. Agent benchmarks pull large images; SWE-bench needs substantial disk space.
+Models take the form `agent:model`, or a bare model for the catalog's default agent. To benchmark your own agent, pass its Harbor agent class with `--agent package.module:AgentClass`; [`examples/tau3_agents`](examples/tau3_agents) has a retail support agent (OpenAI Agents SDK) and a bank support agent (LangGraph) scored on tau3-bench (2026), and [Shipping a retail support agent](docs/retail-agent-guide.md) walks through how a team uses everyeval to test changes to one. `oracle` (the reference solution) and `nop` (does nothing) are free. Harbor resolves registry datasets to their latest version. Every trial's task checksum is recorded, and runs whose task contents differ are blocked from direct comparison. With `--budget`, a run stops when Harbor-reported cost reaches the cap. Agent benchmarks pull large images; SWE-bench needs substantial disk space.
 
 ## Web UI and server
 

@@ -13,7 +13,7 @@ import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import { errorMessage, money, num, pct } from '@/lib/format'
+import { errorMessage, money, num, pct, who } from '@/lib/format'
 import { api, TERMINAL } from '../api'
 
 const OUTCOMES = ['correct', 'incorrect', 'partial', 'error', 'unscored', 'cancelled']
@@ -63,7 +63,8 @@ export default function RunPage() {
         <div className="min-w-0">
           <p className="font-mono text-xs text-muted-foreground">{r.id}</p>
           <h1 className="flex flex-wrap items-center gap-2 text-2xl font-semibold tracking-tight">
-            {r.benchmark} <span className="font-mono text-lg font-normal text-muted-foreground">{r.model}</span>
+            {r.benchmark}{' '}
+            <span className="font-mono text-lg font-normal text-muted-foreground">{who(r.model, r.agent)}</span>
             <StatusBadge value={r.status} />
           </h1>
         </div>

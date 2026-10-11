@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import importlib.util
 import math
+import os
+import re
 import statistics
+import sys
 
 from sqlalchemy import select
 
@@ -33,9 +37,43 @@ def planned_samples(entry: BenchmarkEntry, limit: int | None, epochs: int) -> in
     return min(limit or entry.task_count, entry.task_count) * epochs
 
 
-def validate_plan(entry: BenchmarkEntry, models: list[str], budget_usd: float | None, content_policy: str) -> None:
+AGENT_PATH = re.compile(r"^[A-Za-z_][\w.]*:[A-Za-z_]\w*$")
+
+
+def validate_agent(entry: BenchmarkEntry, agent: str, search_path: str) -> None:
+    """Check a custom agent import path before anything runs (or costs money)."""
+    if not entry.custom_agents:
+        raise PlanError(f"{entry.ref} does not accept a custom agent.")
+    if not AGENT_PATH.match(agent):
+        raise PlanError(f"Agent must be an import path like package.module:AgentClass, got {agent!r}.")
+    module = agent.split(":")[0]
+    sys.path.insert(0, search_path)
+    try:
+        found = importlib.util.find_spec(module) is not None
+    except ModuleNotFoundError:
+        found = False
+    finally:
+        sys.path.remove(search_path)
+    if not found:
+        raise PlanError(f"Cannot find module {module!r} for agent {agent!r} (searched from {search_path}).")
+
+
+def validate_plan(
+    entry: BenchmarkEntry,
+    models: list[str],
+    budget_usd: float | None,
+    content_policy: str,
+    agent: str | None = None,
+    agent_path: str | None = None,
+) -> None:
+    if agent:
+        validate_agent(entry, agent, agent_path or os.getcwd())
     if not models:
         raise PlanError("Choose at least one model with --model.")
+    if entry.adapter == "harbor" and entry.custom_agents and not entry.agent and not agent:
+        needs_agent = [m for m in models if m not in FREE_MODELS and ":" not in m]
+        if needs_agent:
+            raise PlanError(f"{entry.ref} has no default agent; pass one with --agent package.module:AgentClass.")
     if content_policy not in POLICIES:
         raise PlanError(f"Content policy must be one of {', '.join(POLICIES)}.")
     if budget_usd is not None:
@@ -63,8 +101,13 @@ def create_runs(
     quote_id: str | None = None,
     workspace_id: str | None = None,
     purpose: str = "eval",
+    agent: str | None = None,
+    agent_path: str | None = None,
 ) -> list[Run]:
-    validate_plan(entry, models, budget_usd, content_policy)
+    """Plan one run per model. `agent` is a custom agent import path, importable from `agent_path`
+    (default: the current directory). Only the CLI sets it: importing it runs local code."""
+    agent_path = agent_path or os.getcwd()
+    validate_plan(entry, models, budget_usd, content_policy, agent, agent_path)
     group = new_id("grp")
     runs = []
     with session_scope() as session:
@@ -75,6 +118,7 @@ def create_runs(
                 benchmark=entry.ref,
                 variant_key=entry.variant_key,
                 model=model,
+                agent=agent,
                 limit=limit,
                 epochs=epochs,
                 budget_usd=budget_usd,
@@ -85,6 +129,8 @@ def create_runs(
                     "purpose": purpose,
                     "benchmark": entry.model_dump(),
                     "requested_model": model,
+                    "agent": agent,
+                    "agent_path": agent_path if agent else None,
                     "limit": limit,
                     "epochs": epochs,
                     "content_policy": content_policy,
@@ -104,14 +150,16 @@ def create_quote_record(
     epochs: int = 1,
     sample_size: int = 5,
     workspace_id: str | None = None,
+    agent: str | None = None,
 ) -> Quote:
     """Record a quote to be estimated. `compute_quote` fills in the estimate."""
-    validate_plan(entry, models, None, "metadata")
+    validate_plan(entry, models, None, "metadata", agent)
     with session_scope() as session:
         quote = Quote(
             workspace_id=workspace_id,
             benchmark=entry.ref,
             models=models,
+            agent=agent,
             limit=limit,
             sample_size=sample_size,
             samples_planned=planned_samples(entry, limit, epochs),
@@ -130,7 +178,7 @@ def compute_quote(quote_id: str) -> Quote:
     with session_scope() as session:
         quote = session.get(Quote, quote_id)
         entry, models, planned = get_benchmark(quote.benchmark), list(quote.models), quote.samples_planned
-        sample_size, workspace_id = quote.sample_size, quote.workspace_id
+        sample_size, workspace_id, agent = quote.sample_size, quote.workspace_id, quote.agent
     sample_runs = create_runs(
         entry,
         models,
@@ -139,6 +187,7 @@ def compute_quote(quote_id: str) -> Quote:
         content_policy="metadata",
         workspace_id=workspace_id,
         purpose="quote",
+        agent=agent,
     )
     estimate: dict[str, dict] = {}
     for run in sample_runs:
@@ -167,10 +216,11 @@ def create_quote(
     epochs: int = 1,
     sample_size: int = 5,
     workspace_id: str | None = None,
+    agent: str | None = None,
 ) -> Quote:
     """Create and estimate a quote synchronously (CLI)."""
     quote = create_quote_record(
-        entry, models, limit=limit, epochs=epochs, sample_size=sample_size, workspace_id=workspace_id
+        entry, models, limit=limit, epochs=epochs, sample_size=sample_size, workspace_id=workspace_id, agent=agent
     )
     return compute_quote(quote.id)
 
@@ -232,7 +282,7 @@ def runs_from_quote(quote_id: str, content_policy: str = "full", epochs: int = 1
             raise PlanError(f"Quote {quote_id} is {quote.status}; approve it before running.")
         quote.status = "used"
         benchmark, models, limit, cap = quote.benchmark, list(quote.models), quote.limit, quote.cap_usd
-        workspace_id = quote.workspace_id
+        workspace_id, agent = quote.workspace_id, quote.agent
     per_run_cap = None if cap is None else cap / len(models)
     return create_runs(
         get_benchmark(benchmark),
@@ -243,4 +293,5 @@ def runs_from_quote(quote_id: str, content_policy: str = "full", epochs: int = 1
         content_policy=content_policy,
         quote_id=quote_id,
         workspace_id=workspace_id,
+        agent=agent,
     )

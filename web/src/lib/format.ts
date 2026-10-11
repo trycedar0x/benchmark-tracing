@@ -3,6 +3,11 @@ export function money(value: number | null | undefined): string {
   return value < 1 ? `$${value.toFixed(4)}` : `$${value.toFixed(2)}`
 }
 
+/** A run's model, with its custom agent's class name when there is one (as the CLI shows it). */
+export function who(model: string, agent?: string | null): string {
+  return agent ? `${model} · ${agent.split(':').pop()}` : model
+}
+
 export function pct(value: number | null | undefined, digits = 1): string {
   return value === null || value === undefined ? '–' : `${(value * 100).toFixed(digits)}%`
 }

@@ -8,6 +8,7 @@ export type Run = {
   benchmark: string
   variant_key: string
   model: string
+  agent: string | null
   resolved_models: string[]
   limit: number | null
   epochs: number
@@ -148,8 +149,22 @@ export type PairRow = {
 }
 
 export type Comparison = {
-  run_a: { id: string; model: string; benchmark: string; status: string; resolved_models: string[] }
-  run_b: { id: string; model: string; benchmark: string; status: string; resolved_models: string[] }
+  run_a: {
+    id: string
+    model: string
+    agent: string | null
+    benchmark: string
+    status: string
+    resolved_models: string[]
+  }
+  run_b: {
+    id: string
+    model: string
+    agent: string | null
+    benchmark: string
+    status: string
+    resolved_models: string[]
+  }
   compatibility: { comparable: boolean; blocking: string[]; warnings: string[] }
   n_paired: number
   n_scored_pairs: number
