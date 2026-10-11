@@ -41,23 +41,23 @@ export OPENAI_API_KEY=...
 Check the pipeline for free first. `oracle` replays each task's reference solution and should score 100%:
 
 ```bash
-uv run benchtrace run tau3-retail -m oracle --limit 2
+uv run everyeval run tau3-retail -m oracle --limit 2
 ```
 
 Then run an agent and its plain twin on the same tasks, from the repository root (the agent's import path is resolved from the current directory), and compare:
 
 ```bash
-uv run benchtrace quote create tau3-banking -m openai/gpt-5-mini --agent examples.tau3_agents.harbor_agents:BankingAgent --limit 20 --sample-size 2
-uv run benchtrace quote approve <quote-id> --cap 3
-uv run benchtrace run --quote <quote-id>
+uv run everyeval quote create tau3-banking -m openai/gpt-5-mini --agent examples.tau3_agents.harbor_agents:BankingAgent --limit 20 --sample-size 2
+uv run everyeval quote approve <quote-id> --cap 3
+uv run everyeval run --quote <quote-id>
 
-uv run benchtrace run tau3-banking -m openai/gpt-5-mini --agent examples.tau3_agents.harbor_agents:PlainBankingAgent --limit 20 --budget 3 --yes
+uv run everyeval run tau3-banking -m openai/gpt-5-mini --agent examples.tau3_agents.harbor_agents:PlainBankingAgent --limit 20 --budget 3 --yes
 
-uv run benchtrace compare <plain-run> <agent-run>
-uv run benchtrace trace <agent-run> <task>
+uv run everyeval compare <plain-run> <agent-run>
+uv run everyeval trace <agent-run> <task>
 ```
 
-The agents use OpenAI's own clients (the Agents SDK's, and `langchain-openai`) and take `openai/...` models. They report token counts and benchtrace prices them from `~/.benchtrace/pricing.yaml`, so every agent is priced the same way and budgets need the model's price there. Agent and simulated-customer spend both count toward the cap; the grader's one call per task does not.
+The agents use OpenAI's own clients (the Agents SDK's, and `langchain-openai`) and take `openai/...` models. They report token counts and everyeval prices them from `~/.everyeval/pricing.yaml`, so every agent is priced the same way and budgets need the model's price there. Agent and simulated-customer spend both count toward the cap; the grader's one call per task does not.
 
 ## What the traces show
 
@@ -65,7 +65,7 @@ Each task's trace has the conversation as spans: every model call with its token
 
 ## Comparability and reproducibility
 
-- **Benchmark version.** The Harbor tasks clone tau2-bench's latest commit when their images build; recent commits broke the grader (it imports voice-only dependencies the image lacks, so every task scored 0). The catalog entries patch a local copy of the dataset to build on v1.0.1, the release with the published grading fix. Each trial also records the commit it ran against, and `benchtrace compare` blocks runs on different benchmark code.
+- **Benchmark version.** The Harbor tasks clone tau2-bench's latest commit when their images build; recent commits broke the grader (it imports voice-only dependencies the image lacks, so every task scored 0). The catalog entries patch a local copy of the dataset to build on v1.0.1, the release with the published grading fix. Each trial also records the commit it ran against, and `everyeval compare` blocks runs on different benchmark code.
 - **Simulated customer.** Its model is part of the catalog variant (`gpt-5-mini`, low reasoning effort), so scores here are comparable with each other but not with the public leaderboard, which uses `gpt-5.2`.
 - **Isolation.** Each agent installs its pinned packages into its own virtualenv in the task container. The grader runs in the same container, so the agent must not change the grader's packages.
 - **Sample size.** With 20 tasks a run, the confidence interval on a score difference is wide. Treat one small comparison as a demo, and read the per-task changes and traces for why.

@@ -65,7 +65,7 @@ async def run_retail_agent(
     )
     from openai.types.shared import Reasoning
 
-    set_tracing_disabled(True)  # traces go to benchtrace through the trajectory, not to OpenAI
+    set_tracing_disabled(True)  # traces go to everyeval through the trajectory, not to OpenAI
     guards = RetailGuards()
     guards.on_customer_message(first_message)
     instructions = (INSTRUCTIONS if engineered else PLAIN_INSTRUCTIONS).format(policy=policy)

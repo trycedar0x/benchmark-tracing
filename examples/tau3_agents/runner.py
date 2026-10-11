@@ -4,7 +4,7 @@ The task container reaches the benchmark's `tau3-runtime` MCP server, which hold
 customer and the domain tools. This module connects to it, runs one conversation with the chosen
 agent, and writes three files under /logs/agent:
 
-    trajectory.json                 ATIF trajectory (benchtrace turns it into spans)
+    trajectory.json                 ATIF trajectory (everyeval turns it into spans)
     tau3-agent-summary.json         token counts, read back by the Harbor agent class
     tau3-agent-transcript.json      the raw conversation, for debugging
 
@@ -16,7 +16,7 @@ Agents (--agent):
     banking-plain   the same LangGraph agent reduced to a model -> tools loop with a generic prompt
 
 All of them talk to the benchmark through `Tau3Runtime` and record steps with `Recorder`, so
-their traces look the same in benchtrace. Comparing an agent with its plain twin shows what the
+their traces look the same in everyeval. Comparing an agent with its plain twin shows what the
 design adds on the same framework and model.
 """
 
@@ -318,7 +318,7 @@ async def main_async(args: argparse.Namespace) -> int:
     from mcp import ClientSession
     from mcp.client.streamable_http import streamablehttp_client
 
-    recorder = Recorder(agent_name=f"benchtrace-tau3-{args.agent}", model=args.model)
+    recorder = Recorder(agent_name=f"everyeval-tau3-{args.agent}", model=args.model)
     policy = extract_policy(Path(args.instruction_file).read_text(encoding="utf-8"))
     runtime: Tau3Runtime | None = None
     transcript: Any = None
@@ -346,7 +346,7 @@ async def main_async(args: argparse.Namespace) -> int:
         "n_input_tokens": recorder.input_tokens,
         "n_output_tokens": recorder.output_tokens,
         "n_cache_tokens": recorder.cached_tokens,
-        "metadata": extra,  # no cost: benchtrace prices tokens from its own price list
+        "metadata": extra,  # no cost: everyeval prices tokens from its own price list
     }
     _write(out / "tau3-agent-summary.json", summary)
     _write(out / "tau3-agent-transcript.json", {"policy": policy, "conversation": transcript})

@@ -1,0 +1,369 @@
+# EveryEval benchmark catalog.
+#
+# Each entry pins one benchmark variant. `id@version` is the identity used for
+# runs and comparisons; changing the task, its arguments, or the grader means a
+# new version. `task_count` is the full evaluation set size for that variant.
+#
+# Offline entries (offline: true) ship with everyeval and run with the
+# `mock/*` models without network access or API keys.
+
+- id: toy-arith
+  version: 1
+  family: Toy arithmetic
+  variant: 40 integer questions, exact numeric match
+  adapter: inspect
+  task: everyeval/toy_arith
+  grader: numeric exact match
+  task_count: 40
+  license: Apache-2.0
+  offline: true
+  requires: [chat]
+  description: Bundled smoke-test benchmark. Pair with mock/* models for offline demos.
+
+- id: toy-tools
+  version: 1
+  family: Toy calculator agent
+  variant: 30 questions, agent with a calculator tool, exact numeric match
+  adapter: inspect
+  task: everyeval/toy_tools
+  grader: numeric exact match
+  task_count: 30
+  license: Apache-2.0
+  offline: true
+  requires: [chat, tools]
+  description: Bundled agent benchmark with tool calls, for exercising traces offline.
+
+- id: gsm8k
+  version: 1
+  family: GSM8K
+  variant: test split, 1319 problems, 10-shot chain of thought (inspect_evals default)
+  adapter: inspect
+  task: inspect_evals/gsm8k
+  grader: numeric match on final answer
+  task_count: 1319
+  license: MIT
+  dataset: openai/gsm8k
+  requires: [chat]
+
+- id: mmlu
+  version: 1
+  family: MMLU
+  variant: test split, 0-shot multiple choice, all 57 subjects
+  adapter: inspect
+  task: inspect_evals/mmlu_0_shot
+  grader: multiple-choice letter match
+  task_count: 14042
+  license: MIT
+  dataset: cais/mmlu
+  requires: [chat]
+
+- id: mmlu-pro
+  version: 1
+  family: MMLU-Pro
+  variant: test split, 10-option multiple choice
+  adapter: inspect
+  task: inspect_evals/mmlu_pro
+  grader: multiple-choice letter match
+  task_count: 12032
+  license: MIT
+  dataset: TIGER-Lab/MMLU-Pro
+  requires: [chat]
+
+- id: gpqa-diamond
+  version: 1
+  family: GPQA
+  variant: diamond subset, 198 questions, multiple choice with shuffled options
+  adapter: inspect
+  task: inspect_evals/gpqa_diamond
+  grader: multiple-choice letter match
+  task_count: 198
+  license: CC-BY-4.0
+  dataset: Idavidrein/gpqa
+  requires: [chat]
+  notes: Dataset is gated on Hugging Face; accept its terms before running.
+
+- id: arc-challenge
+  version: 1
+  family: ARC
+  variant: Challenge set, test split, multiple choice
+  adapter: inspect
+  task: inspect_evals/arc_challenge
+  grader: multiple-choice letter match
+  task_count: 1172
+  license: CC-BY-SA-4.0
+  dataset: allenai/ai2_arc
+  requires: [chat]
+
+- id: arc-easy
+  version: 1
+  family: ARC
+  variant: Easy set, test split, multiple choice
+  adapter: inspect
+  task: inspect_evals/arc_easy
+  grader: multiple-choice letter match
+  task_count: 2376
+  license: CC-BY-SA-4.0
+  dataset: allenai/ai2_arc
+  requires: [chat]
+
+- id: hellaswag
+  version: 1
+  family: HellaSwag
+  variant: validation split, multiple choice
+  adapter: inspect
+  task: inspect_evals/hellaswag
+  grader: multiple-choice letter match
+  task_count: 10042
+  license: MIT
+  dataset: Rowan/hellaswag
+  requires: [chat]
+
+- id: boolq
+  version: 1
+  family: BoolQ
+  variant: validation split, yes/no
+  adapter: inspect
+  task: inspect_evals/boolq
+  grader: yes/no pattern match
+  task_count: 3270
+  license: CC-BY-SA-3.0
+  dataset: google/boolq
+  requires: [chat]
+
+- id: commonsense-qa
+  version: 1
+  family: CommonsenseQA
+  variant: validation split, multiple choice
+  adapter: inspect
+  task: inspect_evals/commonsense_qa
+  grader: multiple-choice letter match
+  task_count: 1221
+  license: MIT
+  dataset: tau/commonsense_qa
+  requires: [chat]
+
+- id: piqa
+  version: 1
+  family: PIQA
+  variant: validation split, two-choice
+  adapter: inspect
+  task: inspect_evals/piqa
+  grader: multiple-choice letter match
+  task_count: 1838
+  license: AFL-3.0
+  dataset: ybisk/piqa
+  requires: [chat]
+
+- id: winogrande
+  version: 1
+  family: WinoGrande
+  variant: validation split (xl), 5-shot multiple choice
+  adapter: inspect
+  task: inspect_evals/winogrande
+  grader: multiple-choice letter match
+  task_count: 1267
+  license: Apache-2.0
+  dataset: allenai/winogrande
+  requires: [chat]
+
+- id: truthfulqa
+  version: 1
+  family: TruthfulQA
+  variant: validation split, MC1 multiple choice
+  adapter: inspect
+  task: inspect_evals/truthfulqa
+  grader: multiple-choice letter match
+  task_count: 817
+  license: Apache-2.0
+  dataset: truthfulqa/truthful_qa
+  requires: [chat]
+
+- id: ifeval
+  version: 1
+  family: IFEval
+  variant: 541 prompts, strict and loose instruction-following metrics
+  adapter: inspect
+  task: inspect_evals/ifeval
+  grader: programmatic instruction checks
+  task_count: 541
+  license: Apache-2.0
+  dataset: google/IFEval
+  requires: [chat]
+
+- id: drop
+  version: 1
+  family: DROP
+  variant: validation split, 3-shot, F1 on answer spans
+  adapter: inspect
+  task: inspect_evals/drop
+  grader: token F1 against reference answers
+  task_count: 9535
+  license: CC-BY-SA-4.0
+  dataset: ucinlp/drop
+  requires: [chat]
+
+- id: math
+  version: 1
+  family: MATH
+  variant: test split, all levels and subjects, expression equivalence
+  adapter: inspect
+  task: inspect_evals/math
+  grader: expression equivalence (model-graded by default in inspect_evals)
+  task_count: 5000
+  license: MIT
+  dataset: EleutherAI/hendrycks_math
+  requires: [chat]
+
+- id: aime2025
+  version: 1
+  family: AIME
+  variant: AIME 2025 I and II, 30 problems, integer answer match
+  adapter: inspect
+  task: inspect_evals/aime2025
+  grader: integer answer match
+  task_count: 30
+  license: MIT
+  requires: [chat]
+
+- id: humaneval
+  version: 1
+  family: HumanEval
+  variant: 164 problems, pass@1, unit tests in Docker sandbox
+  adapter: inspect
+  task: inspect_evals/humaneval
+  grader: unit tests (pass@1)
+  task_count: 164
+  license: MIT
+  dataset: openai/openai_humaneval
+  requires: [chat]
+  sandbox: docker
+
+- id: mbpp
+  version: 1
+  family: MBPP
+  variant: sanitized test split, pass@1, unit tests in Docker sandbox
+  adapter: inspect
+  task: inspect_evals/mbpp
+  grader: unit tests (pass@1)
+  task_count: 257
+  license: CC-BY-4.0
+  dataset: google-research-datasets/mbpp
+  requires: [chat]
+  sandbox: docker
+
+# Agent benchmarks run with Harbor (uv sync --extra harbor). Each task runs in a
+# Docker sandbox. Model syntax: agent:model (e.g. terminus-2:openai/gpt-4o),
+# a bare model for the default agent, or oracle / nop. Harbor resolves the
+# dataset's latest version; each trial's task checksum is recorded and compared.
+
+- id: harbor-smoke
+  version: 1
+  family: Harbor smoke tasks
+  variant: 2 bundled shell tasks, verified by test scripts
+  adapter: harbor
+  task: bundled:harbor_tasks
+  agent: oracle
+  grader: task test script (reward 0 or 1)
+  task_count: 2
+  license: Apache-2.0
+  offline: true
+  requires: [agent]
+  sandbox: docker
+  description: Bundled Harbor tasks. Run with model oracle (reference solution) or nop to test the pipeline.
+
+- id: terminal-bench
+  version: 2
+  family: Terminal-Bench
+  variant: Terminal-Bench 2.1 (Harbor registry terminal-bench/terminal-bench-2-1)
+  adapter: harbor
+  task: terminal-bench/terminal-bench-2-1
+  agent: terminus-2
+  grader: task test scripts in sandbox
+  task_count: 89
+  license: Apache-2.0
+  requires: [agent, tools]
+  sandbox: docker
+
+- id: swe-bench-verified
+  version: 1
+  family: SWE-bench
+  variant: Verified, 500 tasks (Harbor registry swe-bench/swe-bench-verified)
+  adapter: harbor
+  task: swe-bench/swe-bench-verified
+  agent: mini-swe-agent
+  grader: repository unit tests in sandbox
+  task_count: 500
+  license: MIT
+  requires: [agent, tools]
+  sandbox: docker
+  notes: Large Docker images per task; plan disk space accordingly.
+
+- id: aider-polyglot
+  version: 1
+  family: Aider Polyglot
+  variant: 225 Exercism exercises in six languages (Harbor registry aider/aider-polyglot)
+  adapter: harbor
+  task: aider/aider-polyglot
+  agent: terminus-2
+  grader: exercise unit tests in sandbox
+  task_count: 225
+  license: MIT
+  requires: [agent, tools]
+  sandbox: docker
+
+# tau3-bench (Sierra, 2026) customer-service domains via Harbor's adapter, built on tau2-bench v1.0.1. Each task
+# runs a simulated user behind an MCP server; agents connect to it from the task
+# container. There is no catalog default agent: pass your own with --agent (see
+# examples/tau3_agents), or run `oracle` to check the pipeline for free. The
+# simulated user and the grader's natural-language checks call OpenAI models,
+# pinned below; changing them makes a new variant.
+
+- id: tau3-retail
+  version: 1
+  family: tau3-bench
+  variant: retail domain, 114 tasks, tau2-bench v1.0.1, simulated user gpt-5-mini, NL assertions graded by gpt-5.2
+  adapter: harbor
+  task: sierra-research/tau3-bench
+  task_filter: ["*tau3-retail-*"]
+  env:
+    TAU2_USER_MODEL: gpt-5-mini
+    TAU2_USER_REASONING_EFFORT: low
+    TAU2_NL_ASSERTIONS_MODEL: gpt-5.2
+  env_defaults:
+    OPENAI_BASE_URL: https://api.openai.com/v1
+  patches: &tau2_bench_v1_0_1
+    # The task images clone tau2-bench's latest commit; pin the release with the published grading fix.
+    - files: "environment/**/Dockerfile"
+      old: 'git clone --depth=1 "${TAU2_BENCH_REPO}"'
+      new: 'git clone --depth=1 --branch v1.0.1 "${TAU2_BENCH_REPO}"'
+  custom_agents: true
+  grader: tau2 evaluator (database state and NL assertions), reward 0 or 1
+  task_count: 114
+  license: MIT
+  requires: [agent, tools]
+  sandbox: docker
+  description: Online retail support. Authenticate the customer, then cancel, modify, return or exchange orders under a written policy.
+  notes: Needs OPENAI_API_KEY for the simulated user and grader even when the agent uses another provider. Their spend is reported by the agent as environment cost.
+
+- id: tau3-banking
+  version: 1
+  family: tau3-bench
+  variant: banking_knowledge domain, 97 tasks, tau2-bench v1.0.1, BM25 knowledge search, simulated user gpt-5-mini
+  adapter: harbor
+  task: sierra-research/tau3-bench
+  task_filter: ["*tau3-banking_knowledge-*"]
+  env:
+    TAU2_USER_MODEL: gpt-5-mini
+    TAU2_USER_REASONING_EFFORT: low
+    TAU2_NL_ASSERTIONS_MODEL: gpt-5.2
+  env_defaults:
+    OPENAI_BASE_URL: https://api.openai.com/v1
+  patches: *tau2_bench_v1_0_1
+  custom_agents: true
+  grader: tau2 evaluator (database state, actions and NL assertions), reward 0 or 1
+  task_count: 97
+  license: MIT
+  requires: [agent, tools]
+  sandbox: docker
+  description: Bank customer service over a 698-document knowledge base. Agents must find procedures, verify identity, and unlock the tools the documents name.
+  notes: Needs OPENAI_API_KEY for the simulated user and grader. Strong models score about 20% here.

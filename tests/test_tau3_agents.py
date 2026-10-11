@@ -145,7 +145,7 @@ def test_trajectory_is_valid_atif_and_becomes_spans():
     trajectory = recorder.trajectory({"agent": "retail"})
     harbor_models = pytest.importorskip("harbor.models.trajectories")
     harbor_models.Trajectory.model_validate(trajectory)
-    from benchtrace.harbor_adapter import _trajectory_spans
+    from everyeval.harbor_adapter import _trajectory_spans
 
     spans, models, first_user, last_agent = _trajectory_spans(trajectory, "root", "t1", None, None)
     assert models == {"gpt-test-2026-01-01"}  # the model that actually answered
@@ -155,7 +155,7 @@ def test_trajectory_is_valid_atif_and_becomes_spans():
 
 
 def test_code_steps_are_not_model_calls():
-    from benchtrace.harbor_adapter import _trajectory_spans
+    from everyeval.harbor_adapter import _trajectory_spans
 
     recorder = runner.Recorder(agent_name="test", model="openai/gpt-test")
     recorder.code_step("research", [{"id": "r1", "name": "KB_search", "arguments": {"query": "close card"}}])

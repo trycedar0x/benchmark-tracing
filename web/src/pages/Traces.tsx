@@ -70,7 +70,7 @@ export default function TracesPage() {
             </EmptyMedia>
             <EmptyTitle>No traces from this source</EmptyTitle>
             <EmptyDescription>
-              Send traces with <code>benchtrace.sdk.Benchtrace</code> or any OTLP/HTTP exporter pointed at{' '}
+              Send traces with <code>everyeval.sdk.EveryEval</code> or any OTLP/HTTP exporter pointed at{' '}
               <code>/v1/traces</code>.
             </EmptyDescription>
           </EmptyHeader>

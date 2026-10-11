@@ -3,17 +3,17 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
-from benchtrace.auth import create_api_key, create_user, ensure_workspace, secrets_for, set_secret
-from benchtrace.db import Secret, session_scope
-from benchtrace.server import create_app
+from everyeval.auth import create_api_key, create_user, ensure_workspace, secrets_for, set_secret
+from everyeval.db import Secret, session_scope
+from everyeval.server import create_app
 
 PASSWORD = "correct horse battery"
 
 
 @pytest.fixture
 def auth_env(monkeypatch):
-    monkeypatch.setenv("BENCHTRACE_AUTH", "1")
-    monkeypatch.setenv("BENCHTRACE_SECRET_KEY", "test-master-key")
+    monkeypatch.setenv("EVERYEVAL_AUTH", "1")
+    monkeypatch.setenv("EVERYEVAL_SECRET_KEY", "test-master-key")
     create_user("alice@example.com", PASSWORD, "team-a")
     create_user("bob@example.com", PASSWORD, "team-b")
     create_user("val@example.com", PASSWORD, "team-a", role="viewer")
@@ -49,7 +49,7 @@ def test_requests_without_credentials_are_rejected(auth_env):
 def test_workspaces_are_isolated(auth_env):
     alice, bob = logged_in("alice@example.com"), logged_in("bob@example.com")
     try:
-        [run] = alice.post("/api/runs", json={"benchmark": "toy-arith", "models": ["btmock/strong"], "limit": 3}).json()
+        [run] = alice.post("/api/runs", json={"benchmark": "toy-arith", "models": ["mock/strong"], "limit": 3}).json()
         done = wait_done(alice, run["id"])
         assert done["status"] == "succeeded"
         trace_id = alice.get(f"/api/runs/{run['id']}/samples").json()["items"][0]["trace_id"]
@@ -69,7 +69,7 @@ def test_viewer_is_read_only(auth_env):
     viewer = logged_in("val@example.com")
     try:
         assert viewer.get("/api/runs").status_code == 200
-        resp = viewer.post("/api/runs", json={"benchmark": "toy-arith", "models": ["btmock/strong"]})
+        resp = viewer.post("/api/runs", json={"benchmark": "toy-arith", "models": ["mock/strong"]})
         assert resp.status_code == 403
     finally:
         viewer.__exit__(None, None, None)
@@ -139,14 +139,14 @@ def test_secrets_are_encrypted_and_scoped(auth_env):
 
 
 def test_run_process_receives_workspace_secrets(auth_env):
-    from benchtrace.catalog import get_benchmark
-    from benchtrace.execution import _child_env
-    from benchtrace.service import create_runs
+    from everyeval.catalog import get_benchmark
+    from everyeval.execution import _child_env
+    from everyeval.service import create_runs
 
     with session_scope() as session:
         a = ensure_workspace(session, "team-a").id
     set_secret(a, "OPENAI_API_KEY", "sk-team-a-secret")
-    [run_a] = create_runs(get_benchmark("toy-arith"), ["btmock/strong"], workspace_id=a)
-    [run_local] = create_runs(get_benchmark("toy-arith"), ["btmock/strong"])
+    [run_a] = create_runs(get_benchmark("toy-arith"), ["mock/strong"], workspace_id=a)
+    [run_local] = create_runs(get_benchmark("toy-arith"), ["mock/strong"])
     assert _child_env(run_a.id)["OPENAI_API_KEY"] == "sk-team-a-secret"
     assert _child_env(run_local.id).get("OPENAI_API_KEY") != "sk-team-a-secret"

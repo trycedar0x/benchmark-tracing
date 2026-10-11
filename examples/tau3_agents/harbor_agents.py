@@ -1,9 +1,9 @@
-"""Harbor agents for tau3-bench. Run them from the repository root with benchtrace:
+"""Harbor agents for tau3-bench. Run them from the repository root with everyeval:
 
-    benchtrace run tau3-retail  -m openai/gpt-5-mini --agent examples.tau3_agents.harbor_agents:RetailSupportAgent
-    benchtrace run tau3-retail  -m openai/gpt-5-mini --agent examples.tau3_agents.harbor_agents:PlainRetailAgent
-    benchtrace run tau3-banking -m openai/gpt-5-mini --agent examples.tau3_agents.harbor_agents:BankingAgent
-    benchtrace run tau3-banking -m openai/gpt-5-mini --agent examples.tau3_agents.harbor_agents:PlainBankingAgent
+    everyeval run tau3-retail  -m openai/gpt-5-mini --agent examples.tau3_agents.harbor_agents:RetailSupportAgent
+    everyeval run tau3-retail  -m openai/gpt-5-mini --agent examples.tau3_agents.harbor_agents:PlainRetailAgent
+    everyeval run tau3-banking -m openai/gpt-5-mini --agent examples.tau3_agents.harbor_agents:BankingAgent
+    everyeval run tau3-banking -m openai/gpt-5-mini --agent examples.tau3_agents.harbor_agents:PlainBankingAgent
 
 RetailSupportAgent is built on the OpenAI Agents SDK (retail_agent.py) and BankingAgent on LangGraph
 (banking_agent.py). Each has a plain twin on the same framework without our design, to compare
@@ -11,8 +11,8 @@ against. Each class copies these files into the task container, where the benchm
 reachable, installs the agent's pinned dependencies into its own virtualenv (the grader runs in
 the same container and must keep its own packages), and runs one conversation.
 
-After the run the class reports token counts back to Harbor (benchtrace prices them from its own
-price list), adds the simulated customer's model spend as `environment_cost_usd` (benchtrace counts
+After the run the class reports token counts back to Harbor (everyeval prices them from its own
+price list), adds the simulated customer's model spend as `environment_cost_usd` (everyeval counts
 it toward budgets), and records the tau2-bench commit the task image was built from as
 `benchmark_revision`.
 """
@@ -33,9 +33,9 @@ from harbor.models.agent.context import AgentContext
 
 HERE = Path(__file__).parent
 SOURCES = ("runner.py", "guards.py", "retail_agent.py", "banking_agent.py")
-TARGET_DIR = "/opt/benchtrace-tau3"
+TARGET_DIR = "/opt/everyeval-tau3"
 VENV = f"{TARGET_DIR}/venv"
-INSTRUCTION_TARGET = "/tmp/benchtrace_tau3_instruction.md"
+INSTRUCTION_TARGET = "/tmp/everyeval_tau3_instruction.md"
 SUMMARY = "tau3-agent-summary.json"
 RUNTIME_STATE = "tau3_runtime_state.json"  # written by the benchmark's runtime server
 REVISION_FILE = "tau2-bench-revision.txt"
@@ -76,7 +76,7 @@ class _Tau3Agent(BaseInstalledAgent):
 
     @staticmethod
     def name() -> str:
-        return "benchtrace-tau3"
+        return "everyeval-tau3"
 
     def version(self) -> str | None:
         return "1.0"
@@ -168,7 +168,7 @@ class RetailSupportAgent(_Tau3Agent):
 
     @staticmethod
     def name() -> str:
-        return "benchtrace-tau3-retail"
+        return "everyeval-tau3-retail"
 
 
 class BankingAgent(_Tau3Agent):
@@ -179,7 +179,7 @@ class BankingAgent(_Tau3Agent):
 
     @staticmethod
     def name() -> str:
-        return "benchtrace-tau3-banking"
+        return "everyeval-tau3-banking"
 
 
 class PlainRetailAgent(RetailSupportAgent):
@@ -189,7 +189,7 @@ class PlainRetailAgent(RetailSupportAgent):
 
     @staticmethod
     def name() -> str:
-        return "benchtrace-tau3-retail-plain"
+        return "everyeval-tau3-retail-plain"
 
 
 class PlainBankingAgent(BankingAgent):
@@ -199,4 +199,4 @@ class PlainBankingAgent(BankingAgent):
 
     @staticmethod
     def name() -> str:
-        return "benchtrace-tau3-banking-plain"
+        return "everyeval-tau3-banking-plain"

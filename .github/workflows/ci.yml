@@ -28,7 +28,7 @@ jobs:
       - name: Tests
         run: uv run pytest -q
         env:
-          BENCHTRACE_TEST_POSTGRES: ${{ matrix.database == 'postgres' && 'postgresql+psycopg://postgres:bt@localhost:5432/postgres' || '' }}
+          EVERYEVAL_TEST_POSTGRES: ${{ matrix.database == 'postgres' && 'postgresql+psycopg://postgres:bt@localhost:5432/postgres' || '' }}
 
   tau3-agents:
     # The example agents' frameworks need openai>=3, which conflicts with the harbor extra, so their
@@ -58,8 +58,8 @@ jobs:
       - run: npx --prefix web playwright install --with-deps chromium
       - name: Browser smoke tests
         run: |
-          export BENCHTRACE_HOME=$RUNNER_TEMP/bt
-          uv run benchtrace serve --port 8321 &
+          export EVERYEVAL_HOME=$RUNNER_TEMP/bt
+          uv run everyeval serve --port 8321 &
           server=$!
           for i in $(seq 1 60); do curl -sf localhost:8321/api/health && break; sleep 1; done
           (cd web && npx playwright test --reporter=line); status=$?

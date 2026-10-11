@@ -271,7 +271,7 @@ export class ApiError extends Error {
 
 let workspaceId: string | null = null
 try {
-  workspaceId = localStorage.getItem('benchtrace.workspace')
+  workspaceId = localStorage.getItem('everyeval.workspace') ?? localStorage.getItem('benchtrace.workspace')
 } catch {
   /* storage unavailable */
 }
@@ -279,7 +279,7 @@ try {
 export function selectWorkspace(id: string) {
   workspaceId = id
   try {
-    localStorage.setItem('benchtrace.workspace', id)
+    localStorage.setItem('everyeval.workspace', id)
   } catch {
     /* storage unavailable */
   }
@@ -291,7 +291,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     credentials: 'same-origin',
     headers: {
       'Content-Type': 'application/json',
-      ...(workspaceId ? { 'X-Benchtrace-Workspace': workspaceId } : {}),
+      ...(workspaceId ? { 'X-EveryEval-Workspace': workspaceId } : {}),
       ...(init?.headers ?? {}),
     },
   })

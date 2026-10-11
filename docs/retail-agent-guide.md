@@ -1,8 +1,8 @@
-# Shipping a retail support agent with benchtrace
+# Shipping a retail support agent with everyeval
 
 You run an online store and you have built a customer support agent: it looks up orders, cancels and modifies them, handles returns and exchanges, and has to follow your refund policy. Every change to it (a new prompt, a new model, a guardrail, a framework upgrade) can make it better on some conversations and worse on others, and a few hand-picked chats will not tell you which.
 
-This guide shows how a team in that position uses benchtrace to answer three questions before shipping a change:
+This guide shows how a team in that position uses everyeval to answer three questions before shipping a change:
 
 1. **Did the change help, on realistic conversations, by more than chance?**
 2. **Where it changed an outcome, why?** Which step went differently, and what did the agent see?
@@ -19,11 +19,11 @@ Everything below uses a real run from this repository: a retail agent built on t
 - the agent must follow a written **retail policy**: authenticate the customer first, get explicit confirmation before changing anything, exchange items only once per order, and so on;
 - a **grader** checks the store's database afterwards (did the right orders change, in the right way?) and, for some tasks, whether the agent told the customer what it had to.
 
-That is close to what a production retail agent does all day, which is why it is a better test than a list of single questions. benchtrace runs it through [Harbor](https://github.com/laude-institute/harbor) in Docker, one sandbox per conversation, and builds it on tau2-bench v1.0.1 so every run grades against the same code.
+That is close to what a production retail agent does all day, which is why it is a better test than a list of single questions. everyeval runs it through [Harbor](https://github.com/laude-institute/harbor) in Docker, one sandbox per conversation, and builds it on tau2-bench v1.0.1 so every run grades against the same code.
 
 ## Step 1: Plug your agent in
 
-Your agent stays in your codebase, built with whatever you already use. benchtrace needs a thin wrapper class that Harbor can start inside each task's sandbox, where the simulated customer and the store's tools are reachable over MCP. The example wrappers in [`examples/tau3_agents/harbor_agents.py`](../examples/tau3_agents/harbor_agents.py) do this for an OpenAI Agents SDK agent and a LangGraph agent; most teams copy one and point it at their own agent function.
+Your agent stays in your codebase, built with whatever you already use. everyeval needs a thin wrapper class that Harbor can start inside each task's sandbox, where the simulated customer and the store's tools are reachable over MCP. The example wrappers in [`examples/tau3_agents/harbor_agents.py`](../examples/tau3_agents/harbor_agents.py) do this for an OpenAI Agents SDK agent and a LangGraph agent; most teams copy one and point it at their own agent function.
 
 The wrapper's agent gets the store's tools as ordinary function tools, so the same code that runs in production runs on the benchmark:
 
@@ -38,20 +38,20 @@ agent = Agent(
 )
 ```
 
-Then pass the wrapper's import path to `benchtrace run`. It is resolved from your current directory, so run from your repository root:
+Then pass the wrapper's import path to `everyeval run`. It is resolved from your current directory, so run from your repository root:
 
 ```bash
-uv run benchtrace run tau3-retail -m openai/gpt-5-mini --agent acme_support.benchtrace:AcmeRetailAgent --limit 10
+uv run everyeval run tau3-retail -m openai/gpt-5-mini --agent acme_support.everyeval:AcmeRetailAgent --limit 10
 ```
 
 ## Step 2: Know the cost before you run
 
-Simulated conversations are not free: your agent's model calls, the simulated customer's, and the grader's. Quote first. benchtrace runs a couple of tasks for real, measures the tokens, and projects the full run with a 95% range:
+Simulated conversations are not free: your agent's model calls, the simulated customer's, and the grader's. Quote first. everyeval runs a couple of tasks for real, measures the tokens, and projects the full run with a 95% range:
 
 ```bash
-uv run benchtrace quote create tau3-retail -m openai/gpt-5-mini --agent acme_support.benchtrace:AcmeRetailAgent --limit 10 --sample-size 2
-uv run benchtrace quote approve <quote-id> --cap 1
-uv run benchtrace run --quote <quote-id>
+uv run everyeval quote create tau3-retail -m openai/gpt-5-mini --agent acme_support.everyeval:AcmeRetailAgent --limit 10 --sample-size 2
+uv run everyeval quote approve <quote-id> --cap 1
+uv run everyeval run --quote <quote-id>
 ```
 
 For the example agent on `gpt-5-mini`, a retail conversation cost about **$0.044 for the agent and $0.006 for the simulated customer**; ten conversations cost $0.50. The cap stops the run when it is reached. It counts finished conversations, and up to four run at once, so leave headroom: one of our runs with a $0.40 cap stopped at $0.61.
@@ -61,21 +61,21 @@ For the example agent on `gpt-5-mini`, a retail conversation cost about **$0.044
 Run the old and the new version on the same tasks, then compare. Here the "old" version is a plain agent on the same framework, model and tools (a generic prompt, no guardrails), and the "new" one adds a working procedure and two guardrails: no account access before authentication, and no database change without the customer's confirmation.
 
 ```bash
-uv run benchtrace compare <plain-run> <agent-run>
+uv run everyeval compare <plain-run> <agent-run>
 ```
 
 ![Comparison of the retail agent with its plain twin](../examples/tau3_agents/screenshots/02-compare-retail.png)
 
 How to read it:
 
-- **Scores are paired.** Both agents ran the same 10 conversations, so benchtrace compares them conversation by conversation, not just the averages: 2 improved, none regressed.
+- **Scores are paired.** Both agents ran the same 10 conversations, so everyeval compares them conversation by conversation, not just the averages: 2 improved, none regressed.
 - **The interval tells you how sure to be.** +20 points sounds large, but the 95% confidence interval runs from 0 to +50 and McNemar's test gives p = 0.5. With 10 tasks this is a promising signal, not a result. Run more tasks (all 114 cost about $6–7 per agent at these prices) before you claim it.
 - **Errors are not wrong answers.** A conversation that crashed or timed out is reported separately and left out of the score, so an infrastructure problem cannot pose as a quality change.
-- **Comparisons refuse to mislead.** benchtrace blocks comparing runs on different benchmark variants or different benchmark code, and runs whose traces show more than one model version answering.
+- **Comparisons refuse to mislead.** everyeval blocks comparing runs on different benchmark variants or different benchmark code, and runs whose traces show more than one model version answering.
 
 ## Step 4: Find out why an outcome changed
 
-Click **Diff** on a changed task. benchtrace lines up the two conversations step by step and shows where they first diverged:
+Click **Diff** on a changed task. everyeval lines up the two conversations step by step and shows where they first diverged:
 
 ![Step-aligned diff of one retail conversation](../examples/tau3_agents/screenshots/04-diff-retail-100.png)
 
@@ -94,17 +94,17 @@ This is the point of tracing a benchmark rather than only scoring it: you see *w
 **Gate changes in CI.** Run the current and the candidate agent on a fixed task set and fail the build only on a clear regression, for example when the whole confidence interval is below zero:
 
 ```bash
-uv run benchtrace run tau3-retail -m openai/gpt-5-mini --agent acme_support.benchtrace:AcmeRetailAgent --limit 40 --budget 3 --yes
+uv run everyeval run tau3-retail -m openai/gpt-5-mini --agent acme_support.everyeval:AcmeRetailAgent --limit 40 --budget 3 --yes
 # ...and the same for the candidate, then:
-uv run benchtrace compare <current-run> <candidate-run> --json \
+uv run everyeval compare <current-run> <candidate-run> --json \
   | python -c "import json,sys; c=json.load(sys.stdin); sys.exit(1 if c['delta_ci95'] and c['delta_ci95'][1] < 0 else 0)"
 ```
 
 Custom agents run from the CLI only: the HTTP API does not import agent code, since that would let any API caller run code on the server. For model-only benchmarks, [`examples/api_regression_gate.py`](../examples/api_regression_gate.py) does the same over the API.
 
-**Trace production too.** The same trace view works for live traffic. Instrument your production agent with OpenInference and send spans to benchtrace ([`examples/openai_agents_trace.py`](../examples/openai_agents_trace.py) shows the OpenAI Agents SDK), or import traces you already collect in Langfuse, LangSmith or Braintrust with `benchtrace import`.
+**Trace production too.** The same trace view works for live traffic. Instrument your production agent with OpenInference and send spans to everyeval ([`examples/openai_agents_trace.py`](../examples/openai_agents_trace.py) shows the OpenAI Agents SDK), or import traces you already collect in Langfuse, LangSmith or Braintrust with `everyeval import`.
 
-**Collect the failures.** Wrong conversations, from a benchmark run or imported from production, can be drafted into a reviewed dataset (`benchtrace dataset add <dataset-id> --run <run> --outcome incorrect`), where a person sets the expected outcome before anything is approved. Today these export as single-turn evaluation cases; replaying them as full simulated conversations is not supported yet.
+**Collect the failures.** Wrong conversations, from a benchmark run or imported from production, can be drafted into a reviewed dataset (`everyeval dataset add <dataset-id> --run <run> --outcome incorrect`), where a person sets the expected outcome before anything is approved. Today these export as single-turn evaluation cases; replaying them as full simulated conversations is not supported yet.
 
 ## What to keep in mind
 

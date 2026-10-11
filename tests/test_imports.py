@@ -6,9 +6,9 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 from sqlalchemy import select
 
-from benchtrace.datasets import ReviewError, add_run_samples, add_traces, create_dataset, export_items, review_item
-from benchtrace.db import Span, Trace, session_scope
-from benchtrace.imports import create_import, execute_import
+from everyeval.datasets import ReviewError, add_run_samples, add_traces, create_dataset, export_items, review_item
+from everyeval.db import Span, Trace, session_scope
+from everyeval.imports import create_import, execute_import
 
 LANGFUSE_TRACE = {
     "id": "lf-trace-1",
@@ -232,11 +232,11 @@ def test_dataset_draft_review_and_export_from_import():
 
 
 def test_dataset_from_benchmark_failures():
-    from benchtrace.catalog import get_benchmark
-    from benchtrace.execution import execute_run
-    from benchtrace.service import create_runs
+    from everyeval.catalog import get_benchmark
+    from everyeval.execution import execute_run
+    from everyeval.service import create_runs
 
-    [run] = create_runs(get_benchmark("toy-arith"), ["btmock/weak"], limit=10)
+    [run] = create_runs(get_benchmark("toy-arith"), ["mock/weak"], limit=10)
     execute_run(run.id)
     ds = create_dataset("arith misses")
     items = add_run_samples(ds.id, run.id, ["incorrect"], split="dev")
@@ -247,11 +247,11 @@ def test_dataset_from_benchmark_failures():
 def test_inspect_log_import_creates_comparable_run(tmp_path):
     import glob
 
-    from benchtrace.catalog import get_benchmark
-    from benchtrace.execution import execute_run
-    from benchtrace.service import create_runs
+    from everyeval.catalog import get_benchmark
+    from everyeval.execution import execute_run
+    from everyeval.service import create_runs
 
-    [run] = create_runs(get_benchmark("toy-arith"), ["btmock/strong"], limit=5)
+    [run] = create_runs(get_benchmark("toy-arith"), ["mock/strong"], limit=5)
     finished = execute_run(run.id)
     [log_path] = glob.glob(str(tmp_path / "home" / "logs" / run.id / "*.eval"))
     record = create_import(
@@ -259,7 +259,7 @@ def test_inspect_log_import_creates_comparable_run(tmp_path):
     )
     result = execute_import(record.id)
     assert result.status == "succeeded" and result.traces_imported == 5
-    from benchtrace.db import Run
+    from everyeval.db import Run
 
     with session_scope() as session:
         imported_run = session.scalars(select(Run).where(Run.benchmark.like("external:%toy_arith"))).one()
