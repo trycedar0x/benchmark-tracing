@@ -17,14 +17,13 @@ import time
 
 from market_data import TICKERS, closes
 
-# Agent versions: change these numbers, no coding needed. Each version is evaluated separately.
+# Agent versions: change these numbers, no coding needed. The last one is used by default.
 AGENT_VERSIONS = {
     # First try: judges the trend from yesterday's move only.
     "trader-v1": {"lookback_days": 1, "average_days": 20},
     # Looks at the whole last month (20 trading days) instead.
     "trader-v2": {"lookback_days": 20, "average_days": 20},
 }
-DEFAULT_VERSION = "trader-v2"
 
 
 # Tools: small functions the agent calls to look things up.
@@ -44,9 +43,9 @@ def moving_average(ticker: str, days: int) -> float:
 TOOLS = {"get_prices": get_prices, "price_change": price_change, "moving_average": moving_average}
 
 
-def research(question: str, version: str = DEFAULT_VERSION, steps: list | None = None) -> str:
+def research(question: str, version: str | None = None, steps: list | None = None) -> str:
     """Answer one question. Each tool call is appended to `steps` so it can be traced."""
-    settings = AGENT_VERSIONS[version]
+    settings = AGENT_VERSIONS[version or list(AGENT_VERSIONS)[-1]]
     steps = steps if steps is not None else []
 
     def use(tool: str, **arguments):
@@ -80,7 +79,7 @@ def research(question: str, version: str = DEFAULT_VERSION, steps: list | None =
 
 def main() -> None:
     question = " ".join(sys.argv[1:]) or "Is NVDA trending UP or DOWN over the last 20 trading days?"
-    version = os.environ.get("AGENT_VERSION", DEFAULT_VERSION)
+    version = os.environ.get("AGENT_VERSION") or list(AGENT_VERSIONS)[-1]
     from everyeval.sdk import EveryEval
 
     ee = EveryEval(os.environ.get("EVERYEVAL_URL", "http://127.0.0.1:8321"), content="full")

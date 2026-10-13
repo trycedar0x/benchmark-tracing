@@ -23,7 +23,7 @@ Answer: DOWN. NVDA moved -3.55% over the last 20 day(s).
 Trace 91087710c25c9720e30b473a7580bf54: closed (2/2 spans)
 ```
 
-The question, each tool call and the answer appear under Traces in the web UI.
+It answers with the last version in `AGENT_VERSIONS` (set `AGENT_VERSION=trader-v1` to pick another). The question, each tool call and the answer appear under Traces in the web UI.
 
 ## 2. Score two versions of the agent
 
