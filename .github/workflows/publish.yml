@@ -1,7 +1,8 @@
 name: publish
 
-# Publishes to PyPI when a GitHub release is published. Uses trusted publishing, so no token is stored:
-# on pypi.org, add this repository, workflow `publish.yml` and environment `pypi` as a trusted publisher.
+# Publishes everyeval and everybench (packaging/everybench, pinned to the same everyeval version) to PyPI
+# when a GitHub release is published. Uses trusted publishing, so no token is stored: on pypi.org, add this
+# repository, workflow `publish.yml` and environment `pypi` as a trusted publisher on both projects.
 # The release tag must match the version in pyproject.toml (v0.1.0 for 0.1.0).
 
 on:
@@ -34,6 +35,17 @@ jobs:
           unzip -l dist/*.whl | grep -q "everyeval/static/index.html"
           export EVERYEVAL_HOME=$RUNNER_TEMP/home
           uvx --isolated --from dist/*.whl everyeval run toy-arith -m mock/strong --limit 3 --yes
+      - name: Build everybench pinned to this everyeval version
+        run: |
+          version=$(uv version --short)
+          uv version --project packaging/everybench --frozen "$version"
+          sed -i -E "s/\"everyeval(\[[a-z]+\])?==[^\"]+\"/\"everyeval\1==$version\"/" packaging/everybench/pyproject.toml
+          uv build packaging/everybench -o dist
+      - name: Check everybench installs the everyeval just built
+        run: |
+          export EVERYEVAL_HOME=$RUNNER_TEMP/home-everybench
+          uvx --isolated --from dist/everybench-*.whl --with dist/everyeval-*.whl \
+            everybench run toy-arith -m mock/strong --limit 3 --yes
       - uses: actions/upload-artifact@v4
         with:
           name: dist
