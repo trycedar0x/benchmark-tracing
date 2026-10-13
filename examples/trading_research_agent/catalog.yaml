@@ -1,0 +1,14 @@
+# Adds the trading exam to the everyeval catalog. Point everyeval at it before running:
+#   export EVERYEVAL_CATALOG=examples/trading_research_agent/catalog.yaml
+- id: trading-research
+  version: 1
+  family: Trading research agent
+  variant: 30 questions on made-up market data (trends, 20-day returns, 50-day average)
+  adapter: inspect
+  task: examples/trading_research_agent/exam.py@trading_exam
+  grader: exact match on the "Answer:" word
+  task_count: 30
+  license: Apache-2.0
+  offline: true
+  requires: [chat]
+  description: Scores the example trading research agent. Pick the agent version with -m mockllm/trader-v1 or mockllm/trader-v2.
