@@ -6,9 +6,9 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 from sqlalchemy import select
 
-from everyeval.datasets import ReviewError, add_run_samples, add_traces, create_dataset, export_items, review_item
-from everyeval.db import Span, Trace, session_scope
-from everyeval.imports import create_import, execute_import
+from everybench.datasets import ReviewError, add_run_samples, add_traces, create_dataset, export_items, review_item
+from everybench.db import Span, Trace, session_scope
+from everybench.imports import create_import, execute_import
 
 LANGFUSE_TRACE = {
     "id": "lf-trace-1",
@@ -232,9 +232,9 @@ def test_dataset_draft_review_and_export_from_import():
 
 
 def test_dataset_from_benchmark_failures():
-    from everyeval.catalog import get_benchmark
-    from everyeval.execution import execute_run
-    from everyeval.service import create_runs
+    from everybench.catalog import get_benchmark
+    from everybench.execution import execute_run
+    from everybench.service import create_runs
 
     [run] = create_runs(get_benchmark("toy-arith"), ["mock/weak"], limit=10)
     execute_run(run.id)
@@ -247,9 +247,9 @@ def test_dataset_from_benchmark_failures():
 def test_inspect_log_import_creates_comparable_run(tmp_path):
     import glob
 
-    from everyeval.catalog import get_benchmark
-    from everyeval.execution import execute_run
-    from everyeval.service import create_runs
+    from everybench.catalog import get_benchmark
+    from everybench.execution import execute_run
+    from everybench.service import create_runs
 
     [run] = create_runs(get_benchmark("toy-arith"), ["mock/strong"], limit=5)
     finished = execute_run(run.id)
@@ -259,7 +259,7 @@ def test_inspect_log_import_creates_comparable_run(tmp_path):
     )
     result = execute_import(record.id)
     assert result.status == "succeeded" and result.traces_imported == 5
-    from everyeval.db import Run
+    from everybench.db import Run
 
     with session_scope() as session:
         imported_run = session.scalars(select(Run).where(Run.benchmark.like("external:%toy_arith"))).one()

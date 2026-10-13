@@ -1,8 +1,8 @@
-"""Trace a small agent with the everyeval SDK. Runs offline: the "model" is a stub.
+"""Trace a small agent with the everybench SDK. Runs offline: the "model" is a stub.
 
-    uv run everyeval serve                      # in another terminal
+    uv run everybench serve                      # in another terminal
     uv run python examples/sdk_trace_agent.py
-    uv run everyeval trace <trace-id> --trace-id
+    uv run everybench trace <trace-id> --trace-id
 
 Swap `fake_model` for a real client call; the spans stay the same.
 """
@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import os
 
-from everyeval.sdk import EveryEval
+from everybench.sdk import EveryBench
 
 QUESTIONS = {"q-1": "What is 17 * 23?", "q-2": "What is 1024 / 0?"}
 
@@ -28,12 +28,12 @@ def calculator(expression: str) -> str:
     return str(eval(expression, {"__builtins__": {}}))  # demo only; never eval untrusted input
 
 
-def solve(ee: EveryEval, task_id: str, question: str) -> str:
+def solve(ee: EveryBench, task_id: str, question: str) -> str:
     # One trace per task. Extra keyword arguments become span attributes.
     with ee.trace("solve-question", task_id=task_id):
         prompt = question
         for _ in range(3):
-            # Use GenAI semantic-convention names so model and token counts show up in everyeval.
+            # Use GenAI semantic-convention names so model and token counts show up in everybench.
             with ee.span("call-model", kind="model", **{"gen_ai.request.model": "stub-model"}) as span:
                 ee.record(span, "prompt", prompt)
                 reply = fake_model(prompt)
@@ -51,9 +51,9 @@ def solve(ee: EveryEval, task_id: str, question: str) -> str:
 
 
 def main() -> None:
-    ee = EveryEval(
-        os.environ.get("EVERYEVAL_URL", "http://127.0.0.1:8321"),
-        content="full",  # the server's EVERYEVAL_INGEST_CONTENT can still lower this
+    ee = EveryBench(
+        os.environ.get("EVERYBENCH_URL", "http://127.0.0.1:8321"),
+        content="full",  # the server's EVERYBENCH_INGEST_CONTENT can still lower this
     )
     for task_id, question in QUESTIONS.items():
         try:

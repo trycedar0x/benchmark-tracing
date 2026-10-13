@@ -1,13 +1,13 @@
-"""Trace a LangChain agent (built on LangGraph) into everyeval.
+"""Trace a LangChain agent (built on LangGraph) into everybench.
 
     export OPENAI_API_KEY=...                                        # or another provider, see MODEL
-    EVERYEVAL_INGEST_CONTENT=full uv run everyeval serve            # in another terminal
+    EVERYBENCH_INGEST_CONTENT=full uv run everybench serve            # in another terminal
     uv run --with langchain --with langchain-openai --with openinference-instrumentation-langchain \
         python examples/langchain_agent_trace.py
-    uv run everyeval trace <trace-id> --trace-id
+    uv run everybench trace <trace-id> --trace-id
 
 The OpenInference instrumentation hooks LangChain's callbacks, so every graph step, model
-call and tool call becomes an OpenTelemetry span that the everyeval SDK delivers. The same
+call and tool call becomes an OpenTelemetry span that the everybench SDK delivers. The same
 setup traces hand-built LangGraph graphs.
 """
 
@@ -18,7 +18,7 @@ import os
 from langchain.agents import create_agent
 from openinference.instrumentation.langchain import LangChainInstrumentor
 
-from everyeval.sdk import EveryEval
+from everybench.sdk import EveryBench
 
 # Any LangChain chat model string works, e.g. "anthropic:claude-haiku-4-5" with langchain-anthropic installed.
 MODEL = os.environ.get("LANGCHAIN_MODEL", "openai:gpt-4o-mini")
@@ -32,7 +32,7 @@ def lookup_order(order_id: str) -> str:
 
 
 def main() -> None:
-    ee = EveryEval(os.environ.get("EVERYEVAL_URL", "http://127.0.0.1:8321"), content="full")
+    ee = EveryBench(os.environ.get("EVERYBENCH_URL", "http://127.0.0.1:8321"), content="full")
     LangChainInstrumentor().instrument(tracer_provider=ee.provider)
 
     agent = create_agent(
@@ -41,7 +41,7 @@ def main() -> None:
         system_prompt="You answer order questions. Always look the order up before answering. Be brief.",
     )
     for ticket_id, question in TICKETS.items():
-        # One everyeval trace per ticket; the agent's spans nest under it.
+        # One everybench trace per ticket; the agent's spans nest under it.
         with ee.trace("support-ticket", task_id=ticket_id):
             result = agent.invoke({"messages": [{"role": "user", "content": question}]})
         print(f"{ticket_id} → {result['messages'][-1].content}")

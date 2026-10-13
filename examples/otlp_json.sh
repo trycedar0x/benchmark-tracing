@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 # Send a trace from any language as OTLP/JSON. No SDK needed: this is what an
-# OpenTelemetry OTLP/HTTP exporter does when pointed at everyeval.
-#   uv run everyeval serve            # in another terminal
+# OpenTelemetry OTLP/HTTP exporter does when pointed at everybench.
+#   uv run everybench serve            # in another terminal
 #   bash examples/otlp_json.sh
-# With authentication on, also set EVERYEVAL_API_KEY.
+# With authentication on, also set EVERYBENCH_API_KEY.
 set -euo pipefail
 
-URL="${EVERYEVAL_URL:-http://127.0.0.1:8321}"
+URL="${EVERYBENCH_URL:-http://127.0.0.1:8321}"
 TRACE=$(openssl rand -hex 16) ROOT=$(openssl rand -hex 8) CHILD=$(openssl rand -hex 8)
 NOW=$(date +%s)000000000 LATER=$(( $(date +%s) + 1 ))000000000
 
 curl -sS -X POST "$URL/v1/traces" \
   -H "Content-Type: application/json" \
-  ${EVERYEVAL_API_KEY:+-H "Authorization: Bearer $EVERYEVAL_API_KEY"} \
+  ${EVERYBENCH_API_KEY:+-H "Authorization: Bearer $EVERYBENCH_API_KEY"} \
   -d @- <<JSON
 {
   "resourceSpans": [{
@@ -42,10 +42,10 @@ curl -sS -X POST "$URL/v1/traces" \
 JSON
 echo
 
-# Optional: declare how many spans the trace has, so everyeval can mark it closed or incomplete.
+# Optional: declare how many spans the trace has, so everybench can mark it closed or incomplete.
 curl -sS -X POST "$URL/api/traces/$TRACE/seal" \
   -H "Content-Type: application/json" \
-  ${EVERYEVAL_API_KEY:+-H "Authorization: Bearer $EVERYEVAL_API_KEY"} \
+  ${EVERYBENCH_API_KEY:+-H "Authorization: Bearer $EVERYBENCH_API_KEY"} \
   -d '{"expected_spans": 2}'
 echo
-echo "View it: uv run everyeval trace $TRACE --trace-id"
+echo "View it: uv run everybench trace $TRACE --trace-id"

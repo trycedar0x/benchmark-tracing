@@ -4,5 +4,5 @@
 docs
 web/node_modules
 web/test-results
-src/everyeval/static
+src/everybench/static
 **/__pycache__

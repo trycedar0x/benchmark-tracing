@@ -1,13 +1,13 @@
-"""Trace an OpenAI Agents SDK agent into everyeval.
+"""Trace an OpenAI Agents SDK agent into everybench.
 
     export OPENAI_API_KEY=...
-    EVERYEVAL_INGEST_CONTENT=full uv run everyeval serve        # in another terminal
+    EVERYBENCH_INGEST_CONTENT=full uv run everybench serve        # in another terminal
     uv run --with openai-agents --with openinference-instrumentation-openai-agents \
         python examples/openai_agents_trace.py
-    uv run everyeval trace <trace-id> --trace-id
+    uv run everybench trace <trace-id> --trace-id
 
 The OpenInference instrumentation turns the Agents SDK's own tracing (agent runs, model
-calls, tool calls, handoffs) into OpenTelemetry spans, and the everyeval SDK delivers them.
+calls, tool calls, handoffs) into OpenTelemetry spans, and the everybench SDK delivers them.
 By default the instrumentation replaces the Agents SDK's export to the OpenAI dashboard;
 pass exclusive_processor=False to `instrument()` to keep both.
 """
@@ -20,7 +20,7 @@ import os
 from agents import Agent, Runner, function_tool
 from openinference.instrumentation.openai_agents import OpenAIAgentsInstrumentor
 
-from everyeval.sdk import EveryEval
+from everybench.sdk import EveryBench
 
 ORDERS = {"A-100": "shipped on 3 Oct, arriving 8 Oct", "B-200": "being packed"}
 TICKETS = {"t-1": "Where is my order A-100?", "t-2": "Has order B-200 shipped yet?"}
@@ -41,11 +41,11 @@ agent = Agent(
 
 
 async def main() -> None:
-    ee = EveryEval(os.environ.get("EVERYEVAL_URL", "http://127.0.0.1:8321"), content="full")
+    ee = EveryBench(os.environ.get("EVERYBENCH_URL", "http://127.0.0.1:8321"), content="full")
     OpenAIAgentsInstrumentor().instrument(tracer_provider=ee.provider)
 
     for ticket_id, question in TICKETS.items():
-        # One everyeval trace per ticket; the agent's spans nest under it.
+        # One everybench trace per ticket; the agent's spans nest under it.
         with ee.trace("support-ticket", task_id=ticket_id):
             result = await Runner.run(agent, question)
         print(f"{ticket_id} → {result.final_output}")

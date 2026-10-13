@@ -13,9 +13,9 @@ import pytest
 import uvicorn
 from sqlalchemy import select
 
-from everyeval.db import Span, Trace, session_scope
-from everyeval.sdk import EveryEval
-from everyeval.server import create_app
+from everybench.db import Span, Trace, session_scope
+from everybench.sdk import EveryBench
+from everybench.server import create_app
 
 
 def free_port() -> int:
@@ -49,11 +49,11 @@ def server():
         yield s
 
 
-def client(url: str, tmp_path, **kwargs) -> EveryEval:
-    return EveryEval(url, spool_dir=tmp_path / "spool", set_global=False, flush_interval=0.05, **kwargs)
+def client(url: str, tmp_path, **kwargs) -> EveryBench:
+    return EveryBench(url, spool_dir=tmp_path / "spool", set_global=False, flush_interval=0.05, **kwargs)
 
 
-def emit(ee: EveryEval, name: str = "task") -> str:
+def emit(ee: EveryBench, name: str = "task") -> str:
     with ee.trace(name, task_id="q1") as root:
         with ee.span("plan", kind="model", **{"gen_ai.request.model": "demo"}) as s:
             ee.record(s, "prompt", "What is 2+2? key sk-abcdefghijklmnopqrstuvwx")
@@ -93,14 +93,14 @@ def test_server_policy_caps_client_policy(server, tmp_path, monkeypatch):
 
 
 def test_redacted_content_when_server_allows(tmp_path, monkeypatch):
-    monkeypatch.setenv("EVERYEVAL_INGEST_CONTENT", "full")
+    monkeypatch.setenv("EVERYBENCH_INGEST_CONTENT", "full")
     with LiveServer(free_port()) as srv:
         ee = client(srv.url, tmp_path, content="redacted")
         trace_id = emit(ee)
         ee.close(timeout=10)
     _, spans = stored(trace_id)
     model = next(s for s in spans if s.kind == "model")
-    prompt = model.content["everyeval.content.prompt"]
+    prompt = model.content["everybench.content.prompt"]
     assert "What is 2+2?" in prompt and "sk-abcdef" not in prompt and "[REDACTED:openai_key]" in prompt
 
 
@@ -109,8 +109,8 @@ def test_spans_survive_a_crash_and_are_delivered_later(tmp_path):
     url = f"http://127.0.0.1:{port}"
     script = textwrap.dedent(f"""
         import os, sys
-        from everyeval.sdk import EveryEval
-        ee = EveryEval({url!r}, spool_dir={str(tmp_path / "spool")!r}, set_global=False, flush_interval=0.05)
+        from everybench.sdk import EveryBench
+        ee = EveryBench({url!r}, spool_dir={str(tmp_path / "spool")!r}, set_global=False, flush_interval=0.05)
         with ee.trace("crashy") as root:
             with ee.span("step", kind="tool"):
                 pass
@@ -144,10 +144,10 @@ def test_retried_batch_is_not_stored_twice(server, tmp_path):
             server.url + "/v1/traces",
             data=data,
             method="POST",
-            headers={"Content-Type": "application/x-protobuf", "x-everyeval-batch-id": batch_id},
+            headers={"Content-Type": "application/x-protobuf", "x-everybench-batch-id": batch_id},
         )
         with urllib.request.urlopen(req) as resp:
-            return resp.headers["x-everyeval-duplicate"]
+            return resp.headers["x-everybench-duplicate"]
 
     assert post() == "false"
     assert post() == "true"
@@ -220,7 +220,7 @@ def test_otlp_json_with_openinference_kinds(server):
         headers={"Content-Type": "application/json"},
     )
     with urllib.request.urlopen(req) as resp:
-        assert json.load(resp)["everyeval"]["accepted_spans"] == 1
+        assert json.load(resp)["everybench"]["accepted_spans"] == 1
     trace, [span] = stored("5b8efff798038103d269b633813fc60c")
     assert span.kind == "model" and span.attributes["gen_ai.usage.input_tokens"] == 12
     assert span.content is None and span.content_state == "withheld"

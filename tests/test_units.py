@@ -1,6 +1,6 @@
-from everyeval.catalog import get_benchmark, load_catalog
-from everyeval.pricing import cost_for
-from everyeval.redact import apply_policy, redact, redact_text, scrub_attributes
+from everybench.catalog import get_benchmark, load_catalog
+from everybench.pricing import cost_for
+from everybench.redact import apply_policy, redact, redact_text, scrub_attributes
 
 
 def test_catalog_entries_have_unique_refs_and_stable_variant_keys():
@@ -47,7 +47,7 @@ def test_mock_prices_and_unknown_models():
 def test_unknown_execution_backend_is_rejected():
     import pytest
 
-    from everyeval.backends import get_backend
+    from everybench.backends import get_backend
 
     assert get_backend().name == "local"
     with pytest.raises(ValueError, match="Unknown execution backend"):

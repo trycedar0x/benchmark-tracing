@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from everyeval.harbor_adapter import convert_trial, harbor_command, split_model
+from everybench.harbor_adapter import convert_trial, harbor_command, split_model
 
 RESULT = {
     "id": "trial-uuid",
@@ -101,10 +101,10 @@ def harbor_installed() -> bool:
 
 @pytest.mark.skipif(not (docker_ready() and harbor_installed()), reason="needs Docker and the harbor extra")
 def test_harbor_smoke_oracle_vs_nop():
-    from everyeval.catalog import get_benchmark
-    from everyeval.compare import compare_runs
-    from everyeval.execution import execute_run
-    from everyeval.service import create_runs
+    from everybench.catalog import get_benchmark
+    from everybench.compare import compare_runs
+    from everybench.execution import execute_run
+    from everybench.service import create_runs
 
     oracle, nop = create_runs(get_benchmark("harbor-smoke"), ["oracle", "nop"])
     a, b = execute_run(oracle.id), execute_run(nop.id)
@@ -124,7 +124,7 @@ def test_harbor_command_for_registry_dataset(tmp_path):
 def test_existing_variant_keys_are_unchanged_by_new_catalog_fields():
     import hashlib
 
-    from everyeval.catalog import get_benchmark
+    from everybench.catalog import get_benchmark
 
     entry = get_benchmark("terminal-bench")
     identity = {k: getattr(entry, k) for k in ("id", "version", "adapter", "task", "task_args", "grader")}
@@ -135,7 +135,7 @@ def test_existing_variant_keys_are_unchanged_by_new_catalog_fields():
 
 
 def test_task_filter_env_and_agent_import_root_reach_harbor(tmp_path, monkeypatch):
-    from everyeval.harbor_adapter import harbor_env
+    from everybench.harbor_adapter import harbor_env
 
     monkeypatch.setattr(shutil, "which", lambda *a, **k: "/bin/harbor")
     cmd = harbor_command(
@@ -165,9 +165,9 @@ def test_environment_cost_and_benchmark_revision(tmp_path):
     assert root["agent.stop_reason"] == "user_stop" and json.loads(root["agent.guard_blocks"]) == {"confirm_first": 2}
 
 
-def test_agents_reporting_tokens_only_are_priced_from_the_price_list(tmp_path, everyeval_home):
-    everyeval_home.mkdir(parents=True, exist_ok=True)
-    (everyeval_home / "pricing.yaml").write_text("openai/gpt-x: {input: 1.0, output: 10.0}\n")
+def test_agents_reporting_tokens_only_are_priced_from_the_price_list(tmp_path, everybench_home):
+    everybench_home.mkdir(parents=True, exist_ok=True)
+    (everybench_home / "pricing.yaml").write_text("openai/gpt-x: {input: 1.0, output: 10.0}\n")
     tokens_only = {"n_input_tokens": 1_000_000, "n_output_tokens": 100_000, "metadata": {"environment_cost_usd": 0.5}}
     c = convert_trial(make_trial(tmp_path, {**RESULT, "agent_result": tokens_only}), "run_x", model="openai/gpt-x")
     assert c["spans"][0]["attributes"]["agent_cost_usd"] == pytest.approx(2.0) and c["cost_usd"] == pytest.approx(2.5)
@@ -176,8 +176,8 @@ def test_agents_reporting_tokens_only_are_priced_from_the_price_list(tmp_path, e
 
 
 def test_runs_on_different_benchmark_code_are_blocked():
-    from everyeval.compare import check_compatibility
-    from everyeval.db import Run
+    from everybench.compare import check_compatibility
+    from everybench.db import Run
 
     def run(rev):
         return Run(
@@ -198,8 +198,8 @@ def test_runs_on_different_benchmark_code_are_blocked():
 
 
 def test_custom_agent_is_validated_before_running(tmp_path):
-    from everyeval.catalog import get_benchmark
-    from everyeval.service import PlanError, create_runs
+    from everybench.catalog import get_benchmark
+    from everybench.service import PlanError, create_runs
 
     (tmp_path / "myagents").mkdir()
     (tmp_path / "myagents" / "support.py").write_text("class Agent: ...\n")
@@ -219,8 +219,8 @@ def test_custom_agent_is_validated_before_running(tmp_path):
 
 
 def test_dataset_patches_apply_to_every_task_or_fail(tmp_path, monkeypatch):
-    from everyeval import harbor_adapter
-    from everyeval.catalog import TaskPatch
+    from everybench import harbor_adapter
+    from everybench.catalog import TaskPatch
 
     def fake_download(cmd, **kwargs):
         out = Path(cmd[cmd.index("-o") + 1]) / "ds"

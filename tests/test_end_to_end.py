@@ -6,11 +6,11 @@ import time
 import pytest
 from sqlalchemy import select
 
-from everyeval.catalog import get_benchmark
-from everyeval.compare import compare_runs
-from everyeval.db import Run, SampleResult, Span, session_scope
-from everyeval.execution import execute_run, request_cancel
-from everyeval.service import PlanError, approve_quote, create_quote, create_runs, runs_from_quote
+from everybench.catalog import get_benchmark
+from everybench.compare import compare_runs
+from everybench.db import Run, SampleResult, Span, session_scope
+from everybench.execution import execute_run, request_cancel
+from everybench.service import PlanError, approve_quote, create_quote, create_runs, runs_from_quote
 
 
 def run_one(benchmark: str, model: str, **kwargs) -> Run:

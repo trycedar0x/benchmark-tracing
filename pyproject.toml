@@ -1,7 +1,7 @@
 [project]
-name = "everyeval"
+name = "everybench"
 version = "0.1.0"
-description = "Open-source benchmark evaluation with traces: catalog, quote, run, compare."
+description = "EveryBench by Eva AI: run any benchmark, trace every task, compare runs with paired statistics."
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.12"
@@ -24,10 +24,10 @@ dependencies = [
 ]
 
 [project.scripts]
-everyeval = "everyeval.cli:app"
+everybench = "everybench.cli:app"
 
 [project.entry-points.inspect_ai]
-everyeval = "everyeval._registry"
+everybench = "everybench._registry"
 
 [project.optional-dependencies]
 benchmarks = [
@@ -42,6 +42,11 @@ postgres = [
 harbor = [
     "harbor>=0.24",
 ]
+
+[project.urls]
+Homepage = "https://evabench.dev/everybench"
+Source = "https://github.com/trycedar0x/benchmark-tracing"
+Issues = "https://github.com/trycedar0x/benchmark-tracing/issues"
 
 [build-system]
 requires = ["uv_build>=0.11.7,<0.12.0"]

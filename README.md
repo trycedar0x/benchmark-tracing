@@ -1,6 +1,6 @@
-# everyeval
+# everybench
 
-[![PyPI](https://img.shields.io/pypi/v/everyeval.svg)](https://pypi.org/project/everyeval/)
+[![PyPI](https://img.shields.io/pypi/v/everybench.svg)](https://pypi.org/project/everybench/)
 [![CI](https://github.com/trycedar0x/benchmark-tracing/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/trycedar0x/benchmark-tracing/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](pyproject.toml)
@@ -9,7 +9,7 @@ Run established benchmarks against any model, see a trace for every task, and co
 
 ![Comparing two runs of the same benchmark: score difference with a confidence interval, McNemar's test, and the per-task regressions and improvements](docs/media/ui-2-compare.png)
 
-everyeval reuses existing evaluation tools instead of rebuilding them: [Inspect AI](https://github.com/UKGovernmentBEIS/inspect_ai) runs the benchmarks and [inspect_evals](https://github.com/UKGovernmentBEIS/inspect_evals) supplies them. everyeval adds the parts around them:
+everybench reuses existing evaluation tools instead of rebuilding them: [Inspect AI](https://github.com/UKGovernmentBEIS/inspect_ai) runs the benchmarks and [inspect_evals](https://github.com/UKGovernmentBEIS/inspect_evals) supplies them. everybench adds the parts around them:
 
 - **A versioned catalog.** Each entry pins one benchmark variant (task, arguments, grader). Runs on different variants are never silently compared.
 - **Quotes and budget caps.** Run a small sample, get a token and cost estimate with a 95% range, approve it, and the run stops when it reaches its cap.
@@ -22,16 +22,16 @@ everyeval reuses existing evaluation tools instead of rebuilding them: [Inspect 
 Nothing to install with [uv](https://docs.astral.sh/uv/):
 
 ```bash
-uvx everyeval catalog
-uvx everyeval run toy-arith -m mock/strong -m mock/weak
-uvx everyeval compare <run-a> <run-b>
-uvx everyeval trace <run-b> arith-001
-uvx everyeval serve                                 # web UI at http://127.0.0.1:8321
+uvx everybench catalog
+uvx everybench run toy-arith -m mock/strong -m mock/weak
+uvx everybench compare <run-a> <run-b>
+uvx everybench trace <run-b> arith-001
+uvx everybench serve                                 # web UI at http://127.0.0.1:8321
 ```
 
 ![Terminal: comparing two runs, printing the span tree of a failed task, and diffing the two runs' trajectories to the step where they diverged](docs/media/cli-compare-trace-diff.gif)
 
-To install it instead, run `uv tool install everyeval` or `pip install everyeval`. From a clone, run `uv sync` and prefix commands with `uv run`, as the rest of this README does.
+To install it instead, run `uv tool install everybench` or `pip install everybench`. From a clone, run `uv sync` and prefix commands with `uv run`, as the rest of this README does.
 
 `mock/*` models are deterministic mock models bundled for demos and tests. `toy-arith` and `toy-tools` are bundled benchmarks; `toy-tools` exercises tool calls.
 
@@ -40,15 +40,15 @@ New here? The [user guide](docs/guide.md) walks through reading comparisons, tra
 ## Real models and benchmarks
 
 ```bash
-uv sync --extra benchmarks            # installs inspect_evals; or: uv tool install --python 3.12 "everyeval[benchmarks]"
+uv sync --extra benchmarks            # installs inspect_evals; or: uv tool install --python 3.12 "everybench[benchmarks]"
 export OPENAI_API_KEY=...             # or any provider Inspect supports
 
-uv run everyeval quote create gsm8k -m openai/gpt-4o-mini -m anthropic/claude-haiku-4-5 --limit 200
-uv run everyeval quote approve <quote-id> --cap 5
-uv run everyeval run --quote <quote-id>
+uv run everybench quote create gsm8k -m openai/gpt-4o-mini -m anthropic/claude-haiku-4-5 --limit 200
+uv run everybench quote approve <quote-id> --cap 5
+uv run everybench run --quote <quote-id>
 ```
 
-Model names follow [Inspect's provider format](https://inspect.aisi.org.uk/models.html). everyeval ships no real provider prices because they change; add the models you use to `~/.everyeval/pricing.yaml` (see [`src/everyeval/pricing.yaml`](src/everyeval/pricing.yaml)). Models without a price get token counts but cannot run with a budget cap.
+Model names follow [Inspect's provider format](https://inspect.aisi.org.uk/models.html). everybench ships no real provider prices because they change; add the models you use to `~/.everybench/pricing.yaml` (see [`src/everybench/pricing.yaml`](src/everybench/pricing.yaml)). Models without a price get token counts but cannot run with a budget cap.
 
 Commands that call paid models ask for confirmation, or take `--yes`.
 
@@ -57,40 +57,40 @@ Commands that call paid models ask for confirmation, or take `--yes`.
 Agent benchmarks (Terminal-Bench, SWE-bench Verified, Aider Polyglot) run through [Harbor](https://github.com/laude-institute/harbor) in Docker sandboxes. Each trial becomes a sample with its reward, tokens, cost and an ATIF trajectory converted into model and tool spans.
 
 ```bash
-uv sync --extra harbor                # or: uv tool install --python 3.12 "everyeval[harbor]"
-uv run everyeval run harbor-smoke -m oracle -m nop                 # bundled tasks, no API keys
-uv run everyeval run terminal-bench -m terminus-2:openai/gpt-4o --limit 10 --yes
+uv sync --extra harbor                # or: uv tool install --python 3.12 "everybench[harbor]"
+uv run everybench run harbor-smoke -m oracle -m nop                 # bundled tasks, no API keys
+uv run everybench run terminal-bench -m terminus-2:openai/gpt-4o --limit 10 --yes
 ```
 
-Models take the form `agent:model`, or a bare model for the catalog's default agent. To benchmark your own agent, pass its Harbor agent class with `--agent package.module:AgentClass`; [`examples/tau3_agents`](examples/tau3_agents) has a retail support agent (OpenAI Agents SDK) and a bank support agent (LangGraph) scored on tau3-bench (2026), and [Shipping a retail support agent](docs/retail-agent-guide.md) walks through how a team uses everyeval to test changes to one. `oracle` (the reference solution) and `nop` (does nothing) are free. Harbor resolves registry datasets to their latest version. Every trial's task checksum is recorded, and runs whose task contents differ are blocked from direct comparison. With `--budget`, a run stops when Harbor-reported cost reaches the cap. Agent benchmarks pull large images; SWE-bench needs substantial disk space.
+Models take the form `agent:model`, or a bare model for the catalog's default agent. To benchmark your own agent, pass its Harbor agent class with `--agent package.module:AgentClass`; [`examples/tau3_agents`](examples/tau3_agents) has a retail support agent (OpenAI Agents SDK) and a bank support agent (LangGraph) scored on tau3-bench (2026), and [Shipping a retail support agent](docs/retail-agent-guide.md) walks through how a team uses everybench to test changes to one. `oracle` (the reference solution) and `nop` (does nothing) are free. Harbor resolves registry datasets to their latest version. Every trial's task checksum is recorded, and runs whose task contents differ are blocked from direct comparison. With `--budget`, a run stops when Harbor-reported cost reaches the cap. Agent benchmarks pull large images; SWE-bench needs substantial disk space.
 
 ## Web UI and server
 
 ```bash
 npm --prefix web ci && npm --prefix web run build   # builds the UI into the Python package
-uv run everyeval serve                              # http://127.0.0.1:8321, with 2 embedded workers
+uv run everybench serve                              # http://127.0.0.1:8321, with 2 embedded workers
 ```
 
 Or run everything with Postgres in Docker. Authentication is on in this setup, so set a secret key and create the first user:
 
 ```bash
-export EVERYEVAL_SECRET_KEY="$(openssl rand -hex 32)"
+export EVERYBENCH_SECRET_KEY="$(openssl rand -hex 32)"
 docker compose up --build -d
-docker compose run --rm api everyeval admin create-user you@example.com --workspace main
+docker compose run --rm api everybench admin create-user you@example.com --workspace main
 ```
 
-The API, a worker and Postgres start, and the UI is at http://127.0.0.1:8321. Over the API, paid models need an approved quote (`EVERYEVAL_REQUIRE_QUOTE=0` disables this).
+The API, a worker and Postgres start, and the UI is at http://127.0.0.1:8321. Over the API, paid models need an approved quote (`EVERYBENCH_REQUIRE_QUOTE=0` disables this).
 
 The UI is built with [shadcn/ui](https://ui.shadcn.com) (Nova preset). Browser smoke tests: `npx --prefix web playwright test` against a running server.
 
 ## Tracing your own agent
 
-Send traces from your own code with the SDK (`pip install everyeval`), or point any OpenTelemetry OTLP/HTTP exporter at `/v1/traces`. Spans from OpenInference and GenAI-semantic-convention instrumentations (OpenAI, Anthropic, LangChain and others) are mapped to model, tool and agent steps.
+Send traces from your own code with the SDK (`pip install everybench`), or point any OpenTelemetry OTLP/HTTP exporter at `/v1/traces`. Spans from OpenInference and GenAI-semantic-convention instrumentations (OpenAI, Anthropic, LangChain and others) are mapped to model, tool and agent steps.
 
 ```python
-from everyeval.sdk import EveryEval
+from everybench.sdk import EveryBench
 
-ee = EveryEval("http://127.0.0.1:8321", content="metadata")   # or "redacted" / "full"
+ee = EveryBench("http://127.0.0.1:8321", content="metadata")   # or "redacted" / "full"
 with ee.trace("answer-question", task_id="q-17"):
     with ee.span("call-model", kind="model", **{"gen_ai.request.model": "gpt-4o-mini"}) as span:
         ee.record(span, "output", "...")                         # kept only if the policy allows
@@ -103,7 +103,7 @@ An [OpenAI Agents SDK agent](examples/openai_agents_trace.py) traced through Ope
 
 Delivery is crash-safe. The content policy is applied before anything touches disk. Every batch is written to a local spool (fsync and atomic rename) before it is sent, and is deleted only after the server acknowledges it. Batches left behind by a crash are sent by the next client for the same endpoint. Each batch has a stable id, so a retry after a lost acknowledgement is not stored twice. A full spool refuses new spans and reports them in `ee.health()` instead of silently dropping them. When a `trace` block exits, it seals the trace with its span count. The trace shows as `closed` once every span has arrived, or `incomplete` if some are missing. A closed trace means everything the producer declared was received. It does not prove the instrumentation was complete.
 
-The server stores ingested content according to `EVERYEVAL_INGEST_CONTENT` (default `metadata`). A client can ask for a stricter policy than the server's, but not a looser one.
+The server stores ingested content according to `EVERYBENCH_INGEST_CONTENT` (default `metadata`). A client can ask for a stricter policy than the server's, but not a looser one.
 
 ## Imports and datasets
 
@@ -111,16 +111,16 @@ Import production traces from other tools, then turn interesting ones into revie
 
 ```bash
 export LANGFUSE_PUBLIC_KEY=... LANGFUSE_SECRET_KEY=...           # or LANGSMITH_API_KEY, BRAINTRUST_API_KEY
-uv run everyeval import langfuse --max-traces 200 --rights own_data
-uv run everyeval import langsmith --project support-bot --rights own_data
-uv run everyeval import braintrust --project support-bot --rights own_data
-uv run everyeval import otlp spans.jsonl --rights own_data      # OTLP/JSON files
-uv run everyeval import inspect-log run.eval                   # an existing Inspect log becomes a run
+uv run everybench import langfuse --max-traces 200 --rights own_data
+uv run everybench import langsmith --project support-bot --rights own_data
+uv run everybench import braintrust --project support-bot --rights own_data
+uv run everybench import otlp spans.jsonl --rights own_data      # OTLP/JSON files
+uv run everybench import inspect-log run.eval                   # an existing Inspect log becomes a run
 
-uv run everyeval dataset create "support failures"
-uv run everyeval dataset add <dataset> --run <run> --outcome incorrect --split dev
-uv run everyeval dataset review <item> --reference "..." --split test --approve
-uv run everyeval dataset export <dataset> -o tasks.jsonl       # approved items only, Inspect-compatible
+uv run everybench dataset create "support failures"
+uv run everybench dataset add <dataset> --run <run> --outcome incorrect --split dev
+uv run everybench dataset review <item> --reference "..." --split test --approve
+uv run everybench dataset export <dataset> -o tasks.jsonl       # approved items only, Inspect-compatible
 ```
 
 Importing requires declaring your usage rights. Re-importing a trace replaces it instead of duplicating it. Dataset items start as drafts. The recorded output is kept as evidence and is never used as the reference answer automatically. An item can only be approved once a reviewer has set a reference answer, assigned a dev or held-out test split, and confirmed usage rights. The same flow is in the web UI under Imports and Datasets.
@@ -130,17 +130,17 @@ Importing requires declaring your usage rights. Re-importing a trace replaces it
 Authentication is off by default (single-user local mode, bound to localhost). For a shared server:
 
 ```bash
-export EVERYEVAL_AUTH=1 EVERYEVAL_SECRET_KEY="$(openssl rand -hex 32)"
-uv run everyeval admin create-user you@example.com --workspace main      # prompts for a password
-uv run everyeval admin create-key --workspace main --name ci             # prints a bt_... key once
-uv run everyeval admin set-secret OPENAI_API_KEY --workspace main        # encrypted provider key
-uv run everyeval serve --host 0.0.0.0
+export EVERYBENCH_AUTH=1 EVERYBENCH_SECRET_KEY="$(openssl rand -hex 32)"
+uv run everybench admin create-user you@example.com --workspace main      # prompts for a password
+uv run everybench admin create-key --workspace main --name ci             # prints a bt_... key once
+uv run everybench admin set-secret OPENAI_API_KEY --workspace main        # encrypted provider key
+uv run everybench serve --host 0.0.0.0
 ```
 
 - Every run, trace, quote, import and dataset belongs to one workspace. Members only see their own workspaces.
 - Roles: owners manage secrets, members create runs and keys, and viewers are read-only.
 - The browser uses an HttpOnly session cookie. Scripts, the SDK and OTLP exporters send `Authorization: Bearer bt_...`. Only key hashes are stored.
-- Provider keys and import credentials are stored encrypted (Fernet, keyed from `EVERYEVAL_SECRET_KEY`). They are passed only to that workspace's run processes and imports, and are never returned by the API.
+- Provider keys and import credentials are stored encrypted (Fernet, keyed from `EVERYBENCH_SECRET_KEY`). They are passed only to that workspace's run processes and imports, and are never returned by the API.
 - Put TLS in front of the server before exposing it beyond your machine.
 
 The database schema is managed with Alembic migrations, applied automatically on startup.
@@ -168,9 +168,9 @@ The database schema is managed with Alembic migrations, applied automatically on
 
 Each run executes in its own child process. Inspect hooks stream every finished sample into the database as it completes, with its result and spans. Budget stops and cancellation send the child a SIGINT, which Inspect handles as a graceful cancel and writes a partial log. Samples interrupted that way are marked `cancelled`, not `error`. With a budget, at most four samples run at once, so a stop overshoots by at most a few in-flight calls.
 
-State lives in `~/.everyeval` (override with `EVERYEVAL_HOME`): a SQLite database and the original Inspect logs, which open in [Inspect View](https://inspect.aisi.org.uk/log-viewer.html). Set `EVERYEVAL_DATABASE_URL` to use Postgres.
+State lives in `~/.everybench` (override with `EVERYBENCH_HOME`): a SQLite database and the original Inspect logs, which open in [Inspect View](https://inspect.aisi.org.uk/log-viewer.html). Set `EVERYBENCH_DATABASE_URL` to use Postgres.
 
-everyeval was called benchtrace before. Existing setups keep working: `BENCHTRACE_*` variables are read when the `EVERYEVAL_*` one is unset, `~/.benchtrace` is used until `~/.everyeval` exists, and `bt_` API keys are still accepted.
+Existing setups keep working: legacy `EVERYEVAL_*` and `BENCHTRACE_*` variables are read when the `EVERYBENCH_*` setting is unset (in that order). Existing `~/.everyeval` or `~/.benchtrace` data folders and database files are used until `~/.everybench` exists. Old span attributes and request headers remain accepted, and `bt_` API keys still work. Update Python imports to `everybench` and use `EveryBench` for the SDK client.
 
 ### Content policy
 
@@ -185,7 +185,7 @@ Early but complete for its first scope: CLI, API server and job queue, web UI, t
 ```bash
 uv sync --all-extras
 uv run pytest                                   # SQLite
-EVERYEVAL_TEST_POSTGRES=postgresql+psycopg://postgres:pw@localhost/postgres uv run pytest   # Postgres
+EVERYBENCH_TEST_POSTGRES=postgresql+psycopg://postgres:pw@localhost/postgres uv run pytest   # Postgres
 uv run ruff check src tests
 npm --prefix web ci && npm --prefix web run build
 ```

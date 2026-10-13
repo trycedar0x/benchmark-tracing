@@ -10,7 +10,7 @@ build/
 
 # Local state and scratch
 .scratch/
-.everyeval/
+.everybench/
 *.db
 *.eval
 
@@ -28,7 +28,7 @@ docs/architecture-overview.html
 .env
 
 # Built web UI (npm --prefix web run build)
-src/everyeval/static/
+src/everybench/static/
 web/test-results/
 web/playwright-report/
 

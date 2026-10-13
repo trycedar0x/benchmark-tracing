@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import pytest
 from fastapi.testclient import TestClient
 
-from everyeval.server import create_app
+from everybench.server import create_app
 
 
 @pytest.fixture

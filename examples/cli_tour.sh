@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# A tour of the everyeval CLI. Offline: bundled benchmarks and mock models, no API keys.
+# A tour of the everybench CLI. Offline: bundled benchmarks and mock models, no API keys.
 #   bash examples/cli_tour.sh
-# Uses a throwaway EVERYEVAL_HOME so it does not touch your own runs.
+# Uses a throwaway EVERYBENCH_HOME so it does not touch your own runs.
 set -euo pipefail
 
-export EVERYEVAL_HOME="${EVERYEVAL_HOME:-$(mktemp -d)}" COLUMNS="${COLUMNS:-120}"
-ee() { echo; echo "\$ everyeval $*"; uv run --quiet everyeval "$@"; }
+export EVERYBENCH_HOME="${EVERYBENCH_HOME:-$(mktemp -d)}" COLUMNS="${COLUMNS:-120}"
+ee() { echo; echo "\$ everybench $*"; uv run --quiet everybench "$@"; }
 # Run a command, show its output, and keep it in $out for picking out ids.
 capture() { out=$(ee "$@"); echo "$out"; }
 
@@ -13,7 +13,7 @@ capture() { out=$(ee "$@"); echo "$out"; }
 ee catalog toy-tools
 
 # 2. Estimate cost before running, then approve it with a budget cap.
-#    mock prices are made up; real models need prices in ~/.everyeval/pricing.yaml.
+#    mock prices are made up; real models need prices in ~/.everybench/pricing.yaml.
 capture quote create toy-tools -m mock/strong --sample-size 3
 quote=$(grep -o 'quote_[0-9a-f]*' <<< "$out" | tail -1)
 ee quote approve "$quote" --cap 0.01
@@ -26,7 +26,7 @@ read -r strong weak < <(grep -o 'compare run_[0-9a-f]* run_[0-9a-f]*' <<< "$out"
 ee compare "$strong" "$weak"
 
 # 5. Drill into one changed sample: its span tree, then where the two runs diverged.
-sample=$(uv run --quiet everyeval compare "$strong" "$weak" --json | uv run --quiet python -c \
+sample=$(uv run --quiet everybench compare "$strong" "$weak" --json | uv run --quiet python -c \
   "import json,sys; print(next(r['sample_id'] for r in json.load(sys.stdin)['rows'] if r['change'] == 'regression'))")
 ee show "$weak" --outcome incorrect --samples 5
 ee trace "$weak" "$sample"
@@ -39,4 +39,4 @@ ee dataset add "$dataset" --run "$weak" --outcome incorrect --split dev
 ee dataset show "$dataset"
 
 echo
-echo "Done. Data is in $EVERYEVAL_HOME. Browse it with: EVERYEVAL_HOME=$EVERYEVAL_HOME uv run everyeval serve"
+echo "Done. Data is in $EVERYBENCH_HOME. Browse it with: EVERYBENCH_HOME=$EVERYBENCH_HOME uv run everybench serve"

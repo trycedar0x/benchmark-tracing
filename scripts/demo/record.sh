@@ -4,21 +4,21 @@
 #   npm --prefix web ci && npm --prefix web run build && npx --prefix web playwright install chromium
 #   brew install vhs ffmpeg
 #   bash scripts/demo/record.sh [out-dir]
-# Uses a throwaway EVERYEVAL_HOME and its own port, so it does not touch your runs or server.
+# Uses a throwaway EVERYBENCH_HOME and its own port, so it does not touch your runs or server.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 OUT=$(mkdir -p "${1:-docs/media}" && cd "${1:-docs/media}" && pwd)
 PORT=${PORT:-8322}
-export EVERYEVAL_HOME=$(mktemp -d) EVERYEVAL_INGEST_CONTENT=full EVERYEVAL_URL="http://127.0.0.1:$PORT"
-ee() { COLUMNS=120 uv run --quiet everyeval "$@"; }
+export EVERYBENCH_HOME=$(mktemp -d) EVERYBENCH_INGEST_CONTENT=full EVERYBENCH_URL="http://127.0.0.1:$PORT"
+ee() { COLUMNS=120 uv run --quiet everybench "$@"; }
 
-uv run --quiet everyeval serve --port "$PORT" >"$EVERYEVAL_HOME/serve.log" 2>&1 &
+uv run --quiet everybench serve --port "$PORT" >"$EVERYBENCH_HOME/serve.log" 2>&1 &
 server=$!
 trap 'kill $server 2>/dev/null; wait $server 2>/dev/null || true' EXIT
-for _ in $(seq 1 60); do curl -sf "$EVERYEVAL_URL/api/health" >/dev/null && break; sleep 1; done
+for _ in $(seq 1 60); do curl -sf "$EVERYBENCH_URL/api/health" >/dev/null && break; sleep 1; done
 
-echo "Seeding demo data in $EVERYEVAL_HOME"
+echo "Seeding demo data in $EVERYBENCH_HOME"
 read -r A B < <(ee run toy-tools -m mock/strong -m mock/weak --limit 30 --yes |
   grep -o 'compare run_[0-9a-f]* run_[0-9a-f]*' | cut -d' ' -f2-)
 ee run toy-arith -m mock/strong -m mock/flaky --limit 30 --yes >/dev/null
@@ -50,9 +50,9 @@ Set Padding 24
 Set Theme "GitHub Dark"
 Set TypingSpeed 35ms
 Set WaitTimeout 120s
-Env EVERYEVAL_HOME "$EVERYEVAL_HOME"
+Env EVERYBENCH_HOME "$EVERYBENCH_HOME"
 Hide
-Type 'everyeval() { uv run --quiet everyeval "\$@"; }; cd "$PWD"; clear'
+Type 'everybench() { uv run --quiet everybench "\$@"; }; cd "$PWD"; clear'
 Enter
 Show
 TAPE
@@ -60,7 +60,7 @@ TAPE
 {
   header cli-run.gif
   cat <<'TAPE'
-Type "everyeval run toy-tools -m mock/strong -m mock/weak --limit 30"
+Type "everybench run toy-tools -m mock/strong -m mock/weak --limit 30"
 Sleep 400ms
 Enter
 Wait+Screen /Compare:/
@@ -70,17 +70,17 @@ TAPE
 {
   header cli-compare-trace-diff.gif
   cat <<TAPE
-Type "everyeval compare $A $B"
+Type "everybench compare $A $B"
 Sleep 400ms
 Enter
 Wait+Screen /Inspect a change/
 Sleep 4s
-Type "clear; everyeval trace $B $SAMPLE"
+Type "clear; everybench trace $B $SAMPLE"
 Sleep 400ms
 Enter
 Wait+Screen /scorer/
 Sleep 3s
-Type "clear; everyeval diff $A $B $SAMPLE"
+Type "clear; everybench diff $A $B $SAMPLE"
 Sleep 400ms
 Enter
 Wait+Screen /scorer/
@@ -90,7 +90,7 @@ TAPE
 {
   header cli-sdk-trace.gif
   cat <<TAPE
-Env EVERYEVAL_URL "$EVERYEVAL_URL"
+Env EVERYBENCH_URL "$EVERYBENCH_URL"
 Type "uv run python examples/sdk_trace_agent.py"
 Sleep 400ms
 Enter

@@ -3,17 +3,17 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
-from everyeval.auth import create_api_key, create_user, ensure_workspace, secrets_for, set_secret
-from everyeval.db import Secret, session_scope
-from everyeval.server import create_app
+from everybench.auth import create_api_key, create_user, ensure_workspace, secrets_for, set_secret
+from everybench.db import Secret, session_scope
+from everybench.server import create_app
 
 PASSWORD = "correct horse battery"
 
 
 @pytest.fixture
 def auth_env(monkeypatch):
-    monkeypatch.setenv("EVERYEVAL_AUTH", "1")
-    monkeypatch.setenv("EVERYEVAL_SECRET_KEY", "test-master-key")
+    monkeypatch.setenv("EVERYBENCH_AUTH", "1")
+    monkeypatch.setenv("EVERYBENCH_SECRET_KEY", "test-master-key")
     create_user("alice@example.com", PASSWORD, "team-a")
     create_user("bob@example.com", PASSWORD, "team-b")
     create_user("val@example.com", PASSWORD, "team-a", role="viewer")
@@ -139,9 +139,9 @@ def test_secrets_are_encrypted_and_scoped(auth_env):
 
 
 def test_run_process_receives_workspace_secrets(auth_env):
-    from everyeval.catalog import get_benchmark
-    from everyeval.execution import _child_env
-    from everyeval.service import create_runs
+    from everybench.catalog import get_benchmark
+    from everybench.execution import _child_env
+    from everybench.service import create_runs
 
     with session_scope() as session:
         a = ensure_workspace(session, "team-a").id

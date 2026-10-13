@@ -36,7 +36,7 @@ test('core pages render without errors', async ({ page, request }) => {
 
   const traceId = [...crypto.getRandomValues(new Uint8Array(16))].map((x) => x.toString(16).padStart(2, '0')).join('')
   await request.post('/v1/traces', {
-    headers: { 'Content-Type': 'application/json', 'x-everyeval-source': 'sdk' },
+    headers: { 'Content-Type': 'application/json', 'x-everybench-source': 'sdk' },
     data: {
       resourceSpans: [
         {
