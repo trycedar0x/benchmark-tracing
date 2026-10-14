@@ -83,9 +83,7 @@ def current_workspace(request: Request) -> WorkspaceContext:
     header = request.headers.get("authorization", "")
     bearer = header[7:].strip() if header.lower().startswith("bearer ") else None
     try:
-        principal = authenticate(
-            bearer, request.cookies.get(SESSION_COOKIE), request_header(request, "workspace")
-        )
+        principal = authenticate(bearer, request.cookies.get(SESSION_COOKIE), request_header(request, "workspace"))
     except AuthError as ex:
         raise HTTPException(401, str(ex)) from ex
     if principal.role == "viewer" and request.method not in READ_METHODS:
@@ -123,6 +121,7 @@ class RunRequest(BaseModel):
     budget_usd: float | None = Field(default=None, gt=0)
     content_policy: str = "full"
     quote_id: str | None = None
+    agent_url: str | None = None
 
 
 class ImportRequest(BaseModel):
@@ -383,13 +382,14 @@ def create_app(workers: int = 0) -> FastAPI:
                     raise HTTPException(404, "Quote not found")
             runs = runs_from_quote(body.quote_id, content_policy=body.content_policy, epochs=body.epochs)
         else:
-            if not body.benchmark or not body.models:
-                raise HTTPException(400, "Give a benchmark and at least one model, or a quote_id.")
-            paid = [m for m in body.models if is_paid(m)]
-            if paid and require_quote:
-                raise HTTPException(
-                    400, f"Paid models ({', '.join(paid)}) need an approved quote. Create one at /api/quotes."
-                )
+            if not body.benchmark or not (body.models or body.agent_url):
+                raise HTTPException(400, "Give a benchmark and at least one model, an agent URL, or a quote_id.")
+            if not body.agent_url:
+                paid = [m for m in body.models if is_paid(m)]
+                if paid and require_quote:
+                    raise HTTPException(
+                        400, f"Paid models ({', '.join(paid)}) need an approved quote. Create one at /api/quotes."
+                    )
             runs = create_runs(
                 get_benchmark(body.benchmark),
                 body.models,
@@ -398,6 +398,7 @@ def create_app(workers: int = 0) -> FastAPI:
                 budget_usd=body.budget_usd,
                 content_policy=body.content_policy,
                 workspace_id=ws.workspace_id,
+                agent_url=body.agent_url,
             )
         for run in runs:
             enqueue("run", run.id)

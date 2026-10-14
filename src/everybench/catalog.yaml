@@ -33,6 +33,20 @@
   requires: [chat, tools]
   description: Bundled agent benchmark with tool calls, for exercising traces offline.
 
+- id: research-cases
+  version: 1
+  family: Frozen research cases
+  variant: 6 frozen cases, not live news. Each case is posted to an agent URL
+  adapter: agent-url
+  task: everybench/research_cases
+  grader: reply must say bounce, and must have checked the 20-day trend and the earnings call
+  task_count: 6
+  license: Apache-2.0
+  offline: true
+  requires: [agent-url]
+  description: Frozen research questions, not live news. EveryBench posts each case to an agent URL and scores the reply. No API key.
+  notes: The agent is a separate process. Paste its URL when you start the run.
+
 - id: gsm8k
   version: 1
   family: GSM8K

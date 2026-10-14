@@ -64,7 +64,7 @@ def store_spans(
         )
 
 
-def store_sample(session: Session, run: Run, converted: dict[str, Any]) -> None:
+def store_sample(session: Session, run: Run, converted: dict[str, Any], source: str = "inspect") -> None:
     result = dict(converted["result"])
     if run.content_policy == "metadata":
         for field in _CONTENT_FIELDS:
@@ -88,7 +88,7 @@ def store_sample(session: Session, run: Run, converted: dict[str, Any]) -> None:
         converted["trace"],
         converted["spans"],
         policy=run.content_policy,
-        source="inspect",
+        source=source,
         run_id=run.id,
         workspace_id=run.workspace_id,
     )

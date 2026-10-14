@@ -28,7 +28,9 @@ FREE_MODELS = {"oracle", "nop"}  # Harbor reference-solution and no-op agents
 
 
 def is_paid(model: str) -> bool:
-    return not model.startswith(MOCK_PREFIX) and model not in FREE_MODELS
+    if model.startswith(("http://", "https://", MOCK_PREFIX)) or model in FREE_MODELS:
+        return False
+    return True
 
 
 def planned_samples(entry: BenchmarkEntry, limit: int | None, epochs: int) -> int | None:
@@ -90,6 +92,18 @@ def validate_plan(
             raise PlanError(f"{entry.ref} runs code in a Docker sandbox; install Docker first.")
 
 
+def _agent_url(url: str) -> str:
+    from urllib.parse import urlparse
+
+    url = url.strip()
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise PlanError(f"Agent URL must be an http(s) URL, got {url!r}.")
+    if len(url) > 200:
+        raise PlanError("Agent URL must be 200 characters or shorter.")
+    return url
+
+
 def create_runs(
     entry: BenchmarkEntry,
     models: list[str],
@@ -103,11 +117,26 @@ def create_runs(
     purpose: str = "eval",
     agent: str | None = None,
     agent_path: str | None = None,
+    agent_url: str | None = None,
 ) -> list[Run]:
     """Plan one run per model. `agent` is a custom agent import path, importable from `agent_path`
-    (default: the current directory). Only the CLI sets it: importing it runs local code."""
+    (default: the current directory). Only the CLI sets it: importing it runs local code.
+
+    `agent_url` is an http(s) URL of an agent that is already running outside everybench.
+    """
     agent_path = agent_path or os.getcwd()
-    validate_plan(entry, models, budget_usd, content_policy, agent, agent_path)
+    if entry.adapter == "agent-url" or agent_url:
+        if entry.adapter != "agent-url":
+            raise PlanError(f"{entry.ref} does not send cases to an agent URL.")
+        if not agent_url:
+            raise PlanError(f"{entry.ref} sends each case to an agent URL. Pass --agent-url http://host/answer.")
+        agent_url = _agent_url(agent_url)
+        models = [agent_url]
+        agent = None
+        if content_policy not in POLICIES:
+            raise PlanError(f"Content policy must be one of {', '.join(POLICIES)}.")
+    else:
+        validate_plan(entry, models, budget_usd, content_policy, agent, agent_path)
     group = new_id("grp")
     runs = []
     with session_scope() as session:
@@ -131,6 +160,7 @@ def create_runs(
                     "requested_model": model,
                     "agent": agent,
                     "agent_path": agent_path if agent else None,
+                    "agent_url": agent_url,
                     "limit": limit,
                     "epochs": epochs,
                     "content_policy": content_policy,
@@ -153,6 +183,8 @@ def create_quote_record(
     agent: str | None = None,
 ) -> Quote:
     """Record a quote to be estimated. `compute_quote` fills in the estimate."""
+    if entry.adapter == "agent-url":
+        raise PlanError(f"{entry.ref} calls an agent URL and does not use a paid model, so it does not need a quote.")
     validate_plan(entry, models, None, "metadata", agent)
     with session_scope() as session:
         quote = Quote(
