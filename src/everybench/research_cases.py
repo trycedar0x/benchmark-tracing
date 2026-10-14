@@ -12,6 +12,10 @@ _QUESTION = "Is yesterday a reason to be more bullish, or a bounce in a weaker t
 CASES: list[dict[str, Any]] = [
     {
         "id": "case-1",
+        "ask": "NVDA rose about 3% yesterday on an AI-demand headline. Should I be more bullish?",
+        "missed": (
+            "the last 20 trading days, which are down, or the earnings call, which was more cautious than expected"
+        ),
         "question": (
             "NVDA rose about 3% yesterday on an AI-demand headline. "
             "The last 20 trading days are down, and the last earnings call was more cautious "
@@ -20,6 +24,8 @@ CASES: list[dict[str, Any]] = [
     },
     {
         "id": "case-2",
+        "ask": "AMD rose about 4% yesterday on a chip-supply headline. Should I be more bullish?",
+        "missed": "the last 20 trading days, which are down, or the earnings call, which cut the next-quarter outlook",
         "question": (
             "AMD rose about 4% yesterday on a chip-supply headline. "
             "The last 20 trading days are down, and the last earnings call cut the next-quarter outlook. " + _QUESTION
@@ -27,6 +33,8 @@ CASES: list[dict[str, Any]] = [
     },
     {
         "id": "case-3",
+        "ask": "TSLA rose about 2% yesterday on a delivery headline. Should I be more bullish?",
+        "missed": "the last 20 trading days, which are down, or the earnings call, which walked back the margin guide",
         "question": (
             "TSLA rose about 2% yesterday on a delivery headline. "
             "The last 20 trading days are down, and the last earnings call walked back the margin guide. " + _QUESTION
@@ -34,6 +42,8 @@ CASES: list[dict[str, Any]] = [
     },
     {
         "id": "case-4",
+        "ask": "META rose about 1% yesterday on an ad-click headline. Should I be more bullish?",
+        "missed": "the last 20 trading days, which are down, or the earnings call, which said ad demand is uneven",
         "question": (
             "META rose about 1% yesterday on an ad-click headline. "
             "The last 20 trading days are down, and the last earnings call said ad demand is uneven. " + _QUESTION
@@ -41,6 +51,8 @@ CASES: list[dict[str, Any]] = [
     },
     {
         "id": "case-5",
+        "ask": "AMZN rose about 3% yesterday on a retail-sales headline. Should I be more bullish?",
+        "missed": "the last 20 trading days, which are down, or the earnings call, which flagged margin pressure",
         "question": (
             "AMZN rose about 3% yesterday on a retail-sales headline. "
             "The last 20 trading days are down, and the last earnings call flagged margin pressure. " + _QUESTION
@@ -48,6 +60,11 @@ CASES: list[dict[str, Any]] = [
     },
     {
         "id": "case-6",
+        "ask": "MSFT rose about 2% yesterday on a cloud-contract headline. Should I be more bullish?",
+        "missed": (
+            "the last 20 trading days, which are down, or the earnings call, "
+            "which was more cautious on growth than expected"
+        ),
         "question": (
             "MSFT rose about 2% yesterday on a cloud-contract headline. "
             "The last 20 trading days are down, and the last earnings call was more cautious on growth "

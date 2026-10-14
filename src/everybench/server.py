@@ -719,6 +719,15 @@ def create_app(workers: int = 0) -> FastAPI:
                 raise HTTPException(404, "Trace not found")
             return result.to_dict()
 
+    @app.post("/api/try-agent")
+    def try_agent() -> dict[str, Any]:
+        from everybench.try_agent import run_try
+
+        try:
+            return run_try()
+        except Exception as ex:
+            raise HTTPException(500, "Something went wrong. Try again.") from ex
+
     # -- web UI
 
     static_dir = Path(str(resources.files("everybench") / "static"))

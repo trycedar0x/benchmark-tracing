@@ -63,14 +63,18 @@ async def run_banking_agent(
     (a LangChain chat model), for tests.
     """
     from langchain_core.messages import AIMessage, HumanMessage, RemoveMessage, SystemMessage, ToolMessage
-    from langchain_openai import ChatOpenAI
     from langgraph.errors import GraphRecursionError
     from langgraph.graph import END, START, StateGraph
     from langgraph.graph.message import add_messages
     from langgraph.types import Command
 
-    if chat_model is None and not model.startswith("openai/"):
-        raise ValueError("The LangGraph banking agent uses langchain-openai; pass an openai/... model")
+    if chat_model is None:
+        if not model.startswith("openai/"):
+            raise ValueError("The LangGraph banking agent uses langchain-openai; pass an openai/... model")
+        from langchain_openai import ChatOpenAI
+
+        options = {"reasoning_effort": reasoning_effort} if reasoning_effort else {}
+        chat_model = ChatOpenAI(model=model.removeprefix("openai/"), max_retries=3, **options)
 
     class State(TypedDict):
         messages: Annotated[list, add_messages]
@@ -82,8 +86,6 @@ async def run_banking_agent(
     instructions = (INSTRUCTIONS if engineered else PLAIN_INSTRUCTIONS).format(policy=policy)
     recorder.system(instructions)
     tool_names = {t["function"]["name"] for t in tools}
-    options = {"reasoning_effort": reasoning_effort} if reasoning_effort else {}
-    chat_model = chat_model or ChatOpenAI(model=model.removeprefix("openai/"), max_retries=3, **options)
     llm = chat_model.bind_tools(tools, **({"parallel_tool_calls": False} if engineered else {}))
 
     async def run_tool(name: str, args: dict[str, Any], call_id: str) -> str:
