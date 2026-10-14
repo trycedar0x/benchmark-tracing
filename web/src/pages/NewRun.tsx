@@ -23,6 +23,7 @@ export default function NewRunPage() {
 
   const [benchmark, setBenchmark] = useState('toy-arith@1')
   const [modelText, setModelText] = useState('mock/strong\nmock/weak')
+  const [agentUrl, setAgentUrl] = useState('')
   const [limit, setLimit] = useState('')
   const [epochs, setEpochs] = useState('1')
   const [content, setContent] = useState('full')
@@ -38,6 +39,7 @@ export default function NewRunPage() {
     [modelText],
   )
   const allMock = modelList.length > 0 && modelList.every((m) => m.startsWith(MOCK))
+  const url = agentUrl.trim()
   const entry = catalog.data?.find((e) => e.ref === benchmark)
 
   const quote = useQuery({
@@ -57,7 +59,7 @@ export default function NewRunPage() {
     mutationFn: () =>
       api.startRuns({
         benchmark,
-        models: modelList,
+        ...(url ? { agent_url: url } : { models: modelList }),
         limit: limit ? Number(limit) : null,
         epochs: Number(epochs) || 1,
         content_policy: content,
@@ -113,6 +115,7 @@ export default function NewRunPage() {
                   {entry && (
                     <FieldDescription>
                       {entry.variant}. {num(entry.task_count)} tasks, graded by {entry.grader}.
+                      {entry.requires.includes('agent-url') ? ' Paste the agent URL below. No API key.' : ''}
                       {entry.sandbox ? ' Needs Docker.' : ''}
                     </FieldDescription>
                   )}
@@ -132,6 +135,20 @@ export default function NewRunPage() {
                   />
                   <FieldDescription>
                     Inspect model names. Priced models: {models.data?.map((m) => m.model).join(', ')}
+                  </FieldDescription>
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="agent-url">Agent URL</FieldLabel>
+                  <Input
+                    id="agent-url"
+                    className="font-mono"
+                    value={agentUrl}
+                    onChange={(e) => setAgentUrl(e.target.value)}
+                    placeholder="http://127.0.0.1:8765/answer"
+                  />
+                  <FieldDescription>
+                    An agent that is already running outside this app. EveryBench posts each case to this URL and
+                    scores the reply.
                   </FieldDescription>
                 </Field>
                 <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -186,12 +203,12 @@ export default function NewRunPage() {
           </CardContent>
           <CardFooter className="flex flex-col items-start gap-3">
             <div className="flex flex-wrap gap-2">
-              <Button disabled={!modelList.length || createQuote.isPending} onClick={() => createQuote.mutate()}>
+              <Button disabled={!modelList.length || !!url || createQuote.isPending} onClick={() => createQuote.mutate()}>
                 <Receipt /> Get quote
               </Button>
-              {allMock && (
+              {(allMock || url) && (
                 <Button variant="outline" disabled={startDirect.isPending} onClick={() => startDirect.mutate()}>
-                  <Play /> Run now (mock models)
+                  <Play /> {url ? 'Run agent URL' : 'Run now (mock models)'}
                 </Button>
               )}
             </div>

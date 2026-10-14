@@ -142,6 +142,10 @@ def run_child(run_id: str) -> int:
         custom_agent, agent_path = run.agent, (run.manifest or {}).get("agent_path")
 
     STATE.run_id, STATE.model, STATE.budget = run_id, model, budget
+    if entry.adapter == "agent-url":
+        from everybench.agent_url import run_agent_url
+
+        return run_agent_url(run_id)
     if entry.adapter == "harbor":
         return _run_harbor_child(
             run_id, entry, model, limit, epochs, budget, cfg.logs_dir / run_id, custom_agent, agent_path

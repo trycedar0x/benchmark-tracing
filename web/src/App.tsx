@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Activity, LogOut, Settings } from 'lucide-react'
-import { NavLink, Route, Routes } from 'react-router-dom'
+import { NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -13,6 +13,7 @@ import DatasetsPage from './pages/Datasets'
 import ImportsPage from './pages/Imports'
 import LoginPage from './pages/Login'
 import NewRunPage from './pages/NewRun'
+import TryPage from './pages/Try'
 import RunPage from './pages/Run'
 import RunsPage from './pages/Runs'
 import SettingsPage from './pages/Settings'
@@ -80,6 +81,12 @@ function Account({ me }: { me: Me }) {
 }
 
 export default function App() {
+  const { pathname } = useLocation()
+  if (pathname === '/try') return <TryPage />
+  return <Product />
+}
+
+function Product() {
   const me = useQuery({ queryKey: ['me'], queryFn: api.me, retry: false })
 
   if (me.error instanceof ApiError && me.error.status === 401) return <LoginPage />

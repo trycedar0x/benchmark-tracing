@@ -271,9 +271,10 @@ export class ApiError extends Error {
 
 let workspaceId: string | null = null
 try {
-  workspaceId = localStorage.getItem('everybench.workspace')
-    ?? localStorage.getItem('everyeval.workspace')
-    ?? localStorage.getItem('benchtrace.workspace')
+  workspaceId =
+    localStorage.getItem('everybench.workspace') ??
+    localStorage.getItem('everyeval.workspace') ??
+    localStorage.getItem('benchtrace.workspace')
 } catch {
   /* storage unavailable */
 }
@@ -309,6 +310,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   return res.json() as Promise<T>
 }
+
+export type TryCase = { question: string; line: string }
+
+export type TryResult = { summary: string; cases: TryCase[] }
 
 export const api = {
   catalog: () => request<CatalogEntry[]>('/api/catalog'),
@@ -357,6 +362,7 @@ export const api = {
     request<DatasetItem>(`/api/datasets/${id}/items/${itemId}`, { method: 'PATCH', body: JSON.stringify(body) }),
   traceDiff: (a: string, b: string) => request<TraceDiff>(`/api/trace-diff?${new URLSearchParams({ a, b })}`),
   traces: (params: Record<string, string> = {}) => request<TraceHeader[]>(`/api/traces?${new URLSearchParams(params)}`),
+  tryAgent: () => request<TryResult>('/api/try-agent', { method: 'POST' }),
 }
 
 export const TERMINAL = new Set(['succeeded', 'failed', 'cancelled', 'budget_exceeded'])

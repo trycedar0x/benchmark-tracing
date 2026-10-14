@@ -271,6 +271,10 @@ def run(
     budget: Annotated[float | None, typer.Option(help="Budget cap in USD per run.")] = None,
     quote: Annotated[str | None, typer.Option(help="Run an approved quote.")] = None,
     agent: AgentOpt = None,
+    agent_url: Annotated[
+        str | None,
+        typer.Option("--agent-url", help="http(s) URL of an agent already running outside everybench."),
+    ] = None,
     content: Annotated[str, typer.Option(help="Content policy: full, redacted, or metadata.")] = "full",
     sequential: Annotated[bool, typer.Option(help="Run models one after another.")] = False,
     yes: Annotated[bool, typer.Option("--yes", "-y", help="Approve paid model calls.")] = False,
@@ -282,12 +286,20 @@ def run(
                 _fail("A quote fixes its agent; pass --agent to `quote create` instead.")
             runs = runs_from_quote(quote, content_policy=content, epochs=epochs)
         else:
-            if not benchmark or not model:
-                _fail("Give a benchmark and at least one --model, or --quote.")
+            if not benchmark or not (model or agent_url):
+                _fail("Give a benchmark and at least one --model, or --agent-url, or --quote.")
             entry = get_benchmark(benchmark)
-            _confirm_paid(model, yes, "This run")
+            if not agent_url:
+                _confirm_paid(model or [], yes, "This run")
             runs = create_runs(
-                entry, model, limit=limit, epochs=epochs, budget_usd=budget, content_policy=content, agent=agent
+                entry,
+                model or [],
+                limit=limit,
+                epochs=epochs,
+                budget_usd=budget,
+                content_policy=content,
+                agent=agent,
+                agent_url=agent_url,
             )
     except (CatalogError, PlanError, LookupError) as ex:
         _fail(str(ex))
