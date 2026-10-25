@@ -2,6 +2,8 @@
 
 This guide walks you through everybench from a first offline run to tracing your own agent and gating CI on regressions. Every command here runs without API keys unless a section says otherwise. For a reference of every command and option, see the [README](../README.md) and `everybench --help`.
 
+**Using everybench from a coding agent?** Start with [the agent integration guide](agents.md) and [installable skills](../skills/README.md). The Python SDK is a first-class tracing interface; the HTTP API handles automated benchmark execution and comparison. These workflows do not require a web build or browser.
+
 Runnable versions of the examples are in [`examples/`](../examples). Building a customer support agent? [Shipping a retail support agent](retail-agent-guide.md) walks through benchmarking and tracing one end to end.
 
 ## Contents

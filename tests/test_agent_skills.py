@@ -1,0 +1,257 @@
+"""Consumer skills stay portable and their machine-readable examples work offline."""
+
+import copy
+import importlib.util
+import json
+import os
+import re
+import shutil
+import socket
+import subprocess
+import sys
+import threading
+import time
+from pathlib import Path
+
+import pytest
+import uvicorn
+import yaml
+from fastapi.testclient import TestClient
+
+from everybench.server import create_app
+
+ROOT = Path(__file__).resolve().parents[1]
+SKILLS = ROOT / "skills"
+spec = importlib.util.spec_from_file_location("skill_evaluate", SKILLS / "everybench/scripts/evaluate.py")
+evaluator = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(evaluator)
+
+
+def comparison():
+    return {
+        "compatibility": {"comparable": True, "blocking": [], "warnings": []},
+        "errors": {"a_only": 0, "b_only": 0, "both": 0},
+        "missing": {"only_a": 0, "only_b": 0},
+        "n_scored_pairs": 20,
+        "delta_ci95": [-0.01, 0.03],
+        "rows": [],
+    }
+
+
+def test_gate_policy():
+    result = comparison()
+    assert evaluator.assess(result, 0, 2)[0] == "pass"
+    result["delta_ci95"] = [-0.2, -0.03]
+    assert evaluator.assess(result, 0.02, 2)[0] == "regression"
+    assert evaluator.assess(result, 0.04, 2)[0] == "pass"
+    assert evaluator.assess(result, 0, 21)[0] == "blocked"
+
+
+@pytest.mark.parametrize(
+    "key, value",
+    [
+        ("compatibility", {"comparable": False, "warnings": [], "blocking": ["variant mismatch"]}),
+        ("compatibility", {"comparable": True, "warnings": ["partial overlap"], "blocking": []}),
+        ("errors", {"a_only": 0, "b_only": 1, "both": 0}),
+        ("missing", {"only_a": 1, "only_b": 0}),
+        ("rows", [{"change": "missing"}]),
+        ("delta_ci95", None),
+    ],
+)
+def test_gate_blocks_incomplete_evidence(key, value):
+    result = comparison() | {key: value}
+    assert evaluator.assess(result, 0, 2)[0] == "blocked"
+
+
+def test_script_rejects_unapproved_paid_calls(capsys):
+    assert evaluator.main(["--candidate", "openai/not-authorized"]) == 2
+    report = json.loads(capsys.readouterr().out)
+    assert report["decision"] == "error"
+    assert report["run_ids"] == []
+    assert "operator-approved" in report["reason"]
+
+
+@pytest.mark.parametrize(
+    "quote",
+    [
+        {"status": "draft", "models": ["a", "b"]},
+        {"status": "used", "models": ["a", "b"]},
+        {"status": "approved", "models": ["a", "b", "c"]},
+    ],
+)
+def test_invalid_quote_is_not_consumed(monkeypatch, capsys, quote):
+    def api(self, method, path, body=None):
+        assert method == "GET" and path == "/api/quotes/quote_test"
+        return quote
+
+    monkeypatch.setattr(evaluator.Client, "api", api)
+    assert evaluator.main(["--quote", "quote_test"]) == 2
+    report = json.loads(capsys.readouterr().out)
+    assert report["decision"] == "error"
+    assert report["run_ids"] == []
+
+
+def test_approved_quote_uses_fixed_plan(monkeypatch, capsys):
+    def api(self, method, path, body=None):
+        assert method == "GET"
+        return {"status": "approved", "models": ["provider/a", "provider/b"]}
+
+    def evaluate(client, body, max_drop, min_pairs, report):
+        assert body == {"quote_id": "quote_test", "content_policy": "metadata"}
+        report.update(decision="pass", run_ids=["run_a", "run_b"])
+        return 0
+
+    monkeypatch.setattr(evaluator.Client, "api", api)
+    monkeypatch.setattr(evaluator, "evaluate", evaluate)
+    assert evaluator.main(["--quote", "quote_test"]) == 0
+    assert json.loads(capsys.readouterr().out)["decision"] == "pass"
+
+
+def test_timeout_report_preserves_ids(monkeypatch, capsys):
+    def evaluate(client, body, max_drop, min_pairs, report):
+        report["run_ids"] = ["run_a", "run_b"]
+        raise TimeoutError()
+
+    monkeypatch.setattr(evaluator, "evaluate", evaluate)
+    assert evaluator.main([]) == 2
+    report = json.loads(capsys.readouterr().out)
+    assert report["decision"] == "timeout"
+    assert report["run_ids"] == ["run_a", "run_b"]
+
+
+def test_polling_deadline_preserves_run_ids():
+    class ExpiredClient:
+        deadline = 0
+
+        def api(self, method, path, body=None):
+            if method == "POST":
+                return [{"id": "run_a"}, {"id": "run_b"}]
+            return {"id": path.rsplit("/", 1)[1], "status": "running"}
+
+    report = {}
+    with pytest.raises(TimeoutError):
+        evaluator.evaluate(ExpiredClient(), {}, 0, 2, report)
+    assert report["run_ids"] == ["run_a", "run_b"]
+
+
+@pytest.mark.parametrize("status,outcomes", [("failed", {}), ("budget_exceeded", {}), ("succeeded", {"error": 1})])
+def test_run_status_and_sample_errors_block_gate(status, outcomes):
+    class FinishedClient:
+        def api(self, method, path, body=None):
+            if method == "POST":
+                return [{"id": "run_a"}, {"id": "run_b"}]
+            assert path.startswith("/api/runs/")  # must not compare unusable results
+            return {"id": path.rsplit("/", 1)[1], "status": status, "outcomes": outcomes}
+
+    report = {}
+    assert evaluator.evaluate(FinishedClient(), {}, 0, 2, report) == 2
+    assert report["decision"] == "blocked"
+
+
+def test_skills_have_metadata_and_self_contained_links():
+    for name in ("everybench", "everybench-sdk"):
+        folder = SKILLS / name
+        skill = (folder / "SKILL.md").read_text()
+        metadata = yaml.safe_load(skill.split("---", 2)[1])
+        assert metadata["name"] == name
+        assert len(metadata["description"]) > 40
+        for path in folder.rglob("*.md"):
+            for link in re.findall(r"\[[^\]]+\]\(([^)]+)\)", path.read_text()):
+                if "://" in link or link.startswith("#"):
+                    continue
+                target = (path.parent / link.split("#")[0]).resolve()
+                assert target.is_relative_to(folder.resolve()), (path, link)
+                assert target.exists(), (path, link)
+
+
+def test_agent_documentation_links():
+    for path in (ROOT / "AGENTS.md", ROOT / "docs/agents.md", SKILLS / "README.md"):
+        for link in re.findall(r"\[[^\]]+\]\(([^)]+)\)", path.read_text()):
+            if "://" not in link and not link.startswith("#"):
+                assert (path.parent / link.split("#")[0]).exists(), (path, link)
+
+
+def test_documented_api_routes_exist():
+    with TestClient(create_app(workers=0)) as client:
+        paths = client.get("/openapi.json").json()["paths"]
+    for path in (
+        "/api/health",
+        "/api/catalog",
+        "/api/quotes",
+        "/api/quotes/{quote_id}/approve",
+        "/api/runs",
+        "/api/runs/{run_id}",
+        "/api/runs/{run_id}/samples",
+        "/api/compare",
+        "/api/traces/{trace_id}",
+        "/api/trace-diff",
+        "/v1/traces",
+    ):
+        assert path in paths
+
+
+@pytest.fixture
+def live_server(monkeypatch):
+    # Keep a bound socket through startup to avoid a free-port race.
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    port = sock.getsockname()[1]
+    server = uvicorn.Server(uvicorn.Config(create_app(workers=2), log_level="warning"))
+    thread = threading.Thread(target=server.run, kwargs={"sockets": [sock]}, daemon=True)
+    thread.start()
+    deadline = time.monotonic() + 10
+    try:
+        while not server.started and thread.is_alive() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert server.started
+        monkeypatch.setenv("EVERYBENCH_URL", f"http://127.0.0.1:{port}")
+        yield
+    finally:
+        server.should_exit = True
+        thread.join(timeout=15)
+        sock.close()
+
+
+def run_portable_script(tmp_path, skill, script, *args):
+    destination = tmp_path / "installed" / skill
+    shutil.copytree(SKILLS / skill, destination)
+    # Run outside the repo: installed skills cannot rely on relative repo imports/files.
+    result = subprocess.run(
+        [sys.executable, str(destination / "scripts" / script), *args],
+        cwd=tmp_path,
+        env=os.environ.copy(),
+        text=True,
+        capture_output=True,
+        timeout=90,
+    )
+    return result.returncode, json.loads(result.stdout)
+
+
+@pytest.mark.parametrize("candidate,code,decision", [("mock/strong", 0, "pass"), ("mock/weak", 1, "regression")])
+def test_portable_evaluation_script(live_server, tmp_path, candidate, code, decision):
+    actual, report = run_portable_script(
+        tmp_path, "everybench", "evaluate.py", "--candidate", candidate, "--limit", "20", "--timeout", "60"
+    )
+    assert actual == code, report
+    assert report["schema"] == "everybench.agent-eval/v1"
+    assert report["decision"] == decision
+    assert len(report["run_ids"]) == 2
+    assert report["comparison"]["n_scored_pairs"] == 20
+
+
+def test_portable_sdk_script(live_server, tmp_path):
+    code, report = run_portable_script(tmp_path, "everybench-sdk", "trace_smoke.py", "--timeout", "10")
+    assert code == 0, report
+    assert report["schema"] == "everybench.sdk-smoke/v1"
+    assert report["decision"] == "delivered"
+    assert report["answer"] == 391
+    receipt = report["health"]["receipts"][report["trace_id"]]
+    assert receipt["state"] == "closed"
+    assert receipt["expected_spans"] == receipt["received_spans"] == 3
+
+
+def test_evaluator_does_not_mutate_comparison():
+    result = comparison()
+    original = copy.deepcopy(result)
+    evaluator.assess(result, 0, 2)
+    assert result == original

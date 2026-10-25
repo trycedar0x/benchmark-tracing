@@ -19,3 +19,12 @@ EVERYBENCH_INGEST_CONTENT=full uv run everybench serve    # keep this running in
 ```
 
 Set `EVERYBENCH_URL` to use a server other than `http://127.0.0.1:8321`, and `EVERYBENCH_API_KEY` when authentication is on.
+
+For coding agents, start with [the integration guide](../docs/agents.md). The portable skills also bundle two executable examples, both usable outside this checkout:
+
+| Example | Contract | Run from this repository |
+| --- | --- | --- |
+| [SDK delivery smoke test](../skills/everybench-sdk/scripts/trace_smoke.py) | Fake model + tool trace, metadata only, JSON health/receipt report; exit 0 delivered, 2 incomplete | `uv run python skills/everybench-sdk/scripts/trace_smoke.py --timeout 10` |
+| [Bounded evaluation gate](../skills/everybench/scripts/evaluate.py) | Mock baseline/candidate, finite polling, JSON comparison; exit 0 no clear regression, 1 regression, 2 blocked/error | `uv run python skills/everybench/scripts/evaluate.py --candidate mock/strong --timeout 120` |
+
+Both require a running server but no provider keys for their default workflows. The evaluation helper uses only the standard library; the SDK example requires everybench. Neither installs dependencies, launches a server, or grants permission to spend.
