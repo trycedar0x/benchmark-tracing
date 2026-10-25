@@ -5,7 +5,7 @@
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](pyproject.toml)
 
-Run established benchmarks against any model, see a trace for every task, and compare runs with paired statistics. Open source, local-first, no account needed.
+Run established benchmarks against any model, trace your own agents with the Python SDK, and compare runs with paired statistics. Built for coding-agent workflows through SDK, HTTP API and CLI, with an optional web UI. Open source, local-first, no account needed.
 
 ![Comparing two runs of the same benchmark: score difference with a confidence interval, McNemar's test, and the per-task regressions and improvements](docs/media/ui-2-compare.png)
 
@@ -16,6 +16,31 @@ everybench reuses existing evaluation tools instead of rebuilding them: [Inspect
 - **Traces for every task.** Model calls, tool calls, sandbox commands and grading become a span tree linked to the task's outcome.
 - **Paired comparison.** Per-task regressions and improvements, a bootstrap confidence interval on the score difference, and McNemar's test. Execution errors are reported separately and never counted as wrong answers.
 - **Model identity checks.** Every model call records which model actually answered. A run served by more than one model revision is blocked from strict comparison.
+
+## For coding agents
+
+Start with **[the agent integration guide](docs/agents.md)**. It covers three distinct interfaces: the **Python SDK** for instrumenting your application and verifying trace delivery, the **HTTP API** for scheduling benchmarks and consuming structured results, and the **CLI** for local execution and inspection. The SDK currently handles tracing, not benchmark execution or comparison.
+
+Install the portable **[everybench and everybench-sdk skills](skills/README.md)** in your coding agent's consuming project. They include API/SDK references, an offline SDK delivery check, and a bounded JSON regression-gate script. No browser or interactive prompts are required for those workflows. If you are changing this repo rather than using the tool, read [AGENTS.md](AGENTS.md).
+
+The [human walkthrough](docs/guide.md) and UI remain available; agents should use structured results rather than scrape terminal tables or screenshots.
+
+### Copy and paste into your coding agent
+
+Open your project in your coding agent and paste this prompt. It works whether or not you already have an everybench checkout:
+
+```text
+Help me set up everybench in this project for agent tracing and benchmark regression checks.
+
+Source: https://github.com/trycedar0x/benchmark-tracing
+Read docs/agents.md and skills/README.md from that repository (use a local checkout if available). Install the relevant everybench and everybench-sdk skill folders into this project's supported skill directory, keeping their bundled references and scripts.
+
+Inspect this project's language, agent framework and existing tests, then propose the smallest useful integration. Use the Python SDK for tracing Python agents, OTLP for other languages, and the HTTP API or CLI for benchmark execution and comparison. The Python SDK handles tracing, not benchmark scheduling.
+
+First verify setup with the bundled offline SDK smoke test and mock-model regression gate. Reuse an existing server if configured; otherwise use an isolated local setup. Default to metadata-only capture, keep credentials out of output, and ask before paid model calls (including quote creation), Docker benchmark downloads or production-data access.
+
+Report what you installed or changed, the checks you ran, trace/run IDs and any blockers. Do not claim a successful trace means a benchmark passed, or that an inconclusive comparison proves improvement.
+```
 
 ## Quick start (offline, no API keys)
 
