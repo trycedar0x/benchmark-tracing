@@ -30,7 +30,12 @@ def finished(run):
 def test_catalog_and_health(client):
     assert client.get("/api/health").json()["ok"]
     refs = [e["ref"] for e in client.get("/api/catalog").json()]
-    assert "toy-arith@1" in refs and "gsm8k@1" in refs
+    assert "gsm8k@1" in refs and "terminal-bench@2" in refs
+    assert not {"toy-arith@1", "toy-tools@1", "harbor-smoke@1"} & set(refs)
+    assert client.get("/api/catalog/gsm8k").status_code == 200
+    for internal in ("toy-arith", "toy-tools", "harbor-smoke"):
+        assert client.get(f"/api/catalog/{internal}").status_code == 404
+        assert client.get(f"/api/catalog/{internal}@1").status_code == 404
     assert client.get("/api/catalog/nope").status_code == 404
 
 

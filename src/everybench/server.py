@@ -29,6 +29,7 @@ from everybench.service import (
     MOCK_PREFIX,
     PlanError,
     approve_quote,
+    billed_models,
     create_quote_record,
     create_runs,
     is_paid,
@@ -52,6 +53,7 @@ def run_dict(run: Run, full: bool = False) -> dict[str, Any]:
     data = row_dict(run, exclude=() if full else ("manifest",))
     scored = run.samples_done - run.n_error
     data["accuracy"] = run.n_correct / scored if scored else None
+    data["score"] = (run.metrics or {}).get("mean_score") if run.target_kind == "external_agent" else None
     data["purpose"] = (run.manifest or {}).get("purpose", "eval")
     return data
 
@@ -328,12 +330,12 @@ def create_app(workers: int = 0) -> FastAPI:
 
     @app.get("/api/catalog")
     def catalog() -> list[dict[str, Any]]:
-        entries = sorted(load_catalog().values(), key=lambda e: (not e.offline, e.id))
+        entries = sorted(load_catalog().values(), key=lambda e: e.id)
         return [e.model_dump() | {"ref": e.ref, "variant_key": e.variant_key} for e in entries]
 
     @app.get("/api/catalog/{ref}")
     def catalog_entry(ref: str) -> dict[str, Any]:
-        entry = get_benchmark(ref)
+        entry = get_benchmark(ref, include_internal=False)
         return entry.model_dump() | {"ref": entry.ref, "variant_key": entry.variant_key}
 
     @app.get("/api/models")
@@ -385,13 +387,14 @@ def create_app(workers: int = 0) -> FastAPI:
         else:
             if not body.benchmark or not body.models:
                 raise HTTPException(400, "Give a benchmark and at least one model, or a quote_id.")
-            paid = [m for m in body.models if is_paid(m)]
+            entry = get_benchmark(body.benchmark)
+            paid = [m for m in billed_models(entry, body.models) if is_paid(m)]
             if paid and require_quote:
                 raise HTTPException(
                     400, f"Paid models ({', '.join(paid)}) need an approved quote. Create one at /api/quotes."
                 )
             runs = create_runs(
-                get_benchmark(body.benchmark),
+                entry,
                 body.models,
                 limit=body.limit,
                 epochs=body.epochs,
@@ -461,6 +464,22 @@ def create_app(workers: int = 0) -> FastAPI:
                 query.order_by(SampleResult.sample_id, SampleResult.epoch).offset(offset).limit(limit)
             ).all()
             return {"total": total, "items": [row_dict(s) for s in rows]}
+
+    @app.get("/api/runs/{run_id}/sample-evidence")
+    def sample_evidence(
+        run_id: str,
+        sample_id: str,
+        epoch: int = Query(default=1, ge=1),
+        ws: WorkspaceContext = Depends(current_workspace),
+    ) -> dict[str, Any]:
+        from everybench.artifacts import read_sample_artifact
+
+        with session_scope() as session:
+            _get_run(session, run_id, ws)
+        try:
+            return read_sample_artifact(run_id, sample_id, epoch)
+        except FileNotFoundError as ex:
+            raise HTTPException(404, "Sample evidence not found") from ex
 
     @app.post("/api/runs/{run_id}/cancel")
     def cancel_run(run_id: str, ws: WorkspaceContext = Depends(current_workspace)) -> dict[str, Any]:

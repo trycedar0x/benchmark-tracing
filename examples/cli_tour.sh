@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# A tour of the everybench CLI. Offline: bundled benchmarks and mock models, no API keys.
+# Developer smoke test of the everybench CLI using internal fixtures; not a product benchmark.
 #   bash examples/cli_tour.sh
 # Uses a throwaway EVERYBENCH_HOME so it does not touch your own runs.
 set -euo pipefail
@@ -10,7 +10,7 @@ ee() { echo; echo "\$ everybench $*"; uv run --quiet everybench "$@"; }
 capture() { out=$(ee "$@"); echo "$out"; }
 
 # 1. What can I run?
-ee catalog toy-tools
+ee catalog toy-tools --include-internal
 
 # 2. Estimate cost before running, then approve it with a budget cap.
 #    mock prices are made up; real models need prices in ~/.everybench/pricing.yaml.

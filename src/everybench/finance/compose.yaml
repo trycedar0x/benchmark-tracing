@@ -1,0 +1,20 @@
+# Experimental sandbox. No host mounts, API credentials, or network access for generated Python.
+# Pin the image digest before publishing a stable benchmark variant.
+services:
+  default:
+    image: python:3.12-slim
+    init: true
+    user: "65534:65534"
+    working_dir: /workspace
+    network_mode: none
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=64m,mode=1777
+      - /workspace:rw,nosuid,nodev,size=64m,mode=1777
+    mem_limit: 256m
+    cpus: 1
+    pids_limit: 64
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true

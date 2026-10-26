@@ -11,7 +11,7 @@ import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTi
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { ago, errorMessage, money, pct, who } from '@/lib/format'
+import { ago, errorMessage, money, pct, runMetric, who } from '@/lib/format'
 import { api, TERMINAL } from '../api'
 
 export default function RunsPage() {
@@ -24,6 +24,11 @@ export default function RunsPage() {
   })
 
   const toggle = (id: string) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s.slice(-1), id]))
+  const metricColumn = runs.data?.some((r) => r.target_kind === 'external_agent')
+    ? runs.data.every((r) => r.target_kind === 'external_agent')
+      ? 'Score'
+      : 'Score / Accuracy'
+    : 'Accuracy'
 
   return (
     <div className="grid gap-4">
@@ -57,7 +62,7 @@ export default function RunsPage() {
             </EmptyMedia>
             <EmptyTitle>No runs yet</EmptyTitle>
             <EmptyDescription>
-              Try toy-arith with mock/strong and mock/weak. It runs offline with no API keys.
+              Choose a benchmark and your models, then get a quote before starting your first run.
             </EmptyDescription>
           </EmptyHeader>
           <EmptyContent>
@@ -76,7 +81,7 @@ export default function RunsPage() {
                   <TableHead>Model</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Progress</TableHead>
-                  <TableHead className="text-right">Accuracy</TableHead>
+                  <TableHead className="text-right">{metricColumn}</TableHead>
                   <TableHead className="text-right">Errors</TableHead>
                   <TableHead className="text-right">Cost</TableHead>
                   <TableHead>Created</TableHead>
@@ -98,7 +103,7 @@ export default function RunsPage() {
                       </Link>
                     </TableCell>
                     <TableCell>{r.benchmark}</TableCell>
-                    <TableCell className="font-mono text-xs">{who(r.model, r.agent)}</TableCell>
+                    <TableCell className="font-mono text-xs">{who(r.model, r.agent, r.target)}</TableCell>
                     <TableCell>
                       <StatusBadge value={r.status} />
                     </TableCell>
@@ -113,7 +118,9 @@ export default function RunsPage() {
                         </span>
                       </div>
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">{pct(r.accuracy)}</TableCell>
+                    <TableCell className="text-right tabular-nums" title={runMetric(r).label}>
+                      {pct(runMetric(r).value)}
+                    </TableCell>
                     <TableCell className="text-right tabular-nums">{r.n_error}</TableCell>
                     <TableCell className="text-right tabular-nums">{money(r.cost_usd)}</TableCell>
                     <TableCell className="text-muted-foreground">{ago(r.created_at)}</TableCell>

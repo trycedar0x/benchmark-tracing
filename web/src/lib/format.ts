@@ -1,11 +1,30 @@
+import type { Run, RunTarget } from '../api'
+
 export function money(value: number | null | undefined): string {
   if (value === null || value === undefined) return '–'
   return value < 1 ? `$${value.toFixed(4)}` : `$${value.toFixed(2)}`
 }
 
-/** A run's model, with its custom agent's class name when there is one (as the CLI shows it). */
-export function who(model: string, agent?: string | null): string {
+/** Display actual external target identity, preserving legacy model/Harbor labels. */
+export function who(model: string | null, agent?: string | null, target?: RunTarget): string {
+  if (model === null || target?.kind === 'external_agent') {
+    return `External agent · ${target?.name || target?.identity || 'Unnamed'} (${target?.version || 'unversioned'})`
+  }
   return agent ? `${model} · ${agent.split(':').pop()}` : model
+}
+
+export function runMetric(run: Pick<Run, 'target_kind' | 'score' | 'accuracy'>): {
+  label: 'Score' | 'Accuracy'
+  value: number | null
+} {
+  return run.target_kind === 'external_agent'
+    ? { label: 'Score', value: run.score }
+    : { label: 'Accuracy', value: run.accuracy }
+}
+
+export function resolvedModelsNote(run: Pick<Run, 'target_kind' | 'resolved_models'>): string | undefined {
+  if (run.resolved_models.length <= 1) return undefined
+  return run.target_kind === 'external_agent' ? 'multiple models' : 'more than one revision'
 }
 
 export function pct(value: number | null | undefined, digits = 1): string {

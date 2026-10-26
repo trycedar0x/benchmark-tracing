@@ -14,6 +14,7 @@ import yaml
 from pydantic import BaseModel, Field
 
 from everybench.config import env
+from everybench.scoring import ScoreSpec
 
 
 class CatalogError(LookupError):
@@ -43,6 +44,8 @@ class BenchmarkEntry(BaseModel):
     requires: list[str] = Field(default_factory=lambda: ["chat"])
     sandbox: str | None = None
     offline: bool = False
+    internal: bool = False  # development fixtures, excluded from user-facing catalogs
+    scoring: ScoreSpec | None = None
     agent: str | None = None  # default Harbor agent
     task_filter: list[str] = Field(default_factory=list)  # Harbor task-name globs selecting a subset
     env: dict[str, str] = Field(default_factory=dict)  # pinned environment, e.g. a simulated user's model
@@ -71,6 +74,8 @@ class BenchmarkEntry(BaseModel):
             "grader": self.grader,
         }
         # Added only when set, so entries without them keep their existing keys.
+        if self.scoring is not None:
+            identity["scoring"] = self.scoring.model_dump()
         if self.task_filter:
             identity["task_filter"] = self.task_filter
         if self.env:
@@ -89,18 +94,19 @@ def _catalog_paths() -> list[Path]:
 
 
 @lru_cache(maxsize=1)
-def load_catalog() -> dict[str, BenchmarkEntry]:
+def load_catalog(*, include_internal: bool = False) -> dict[str, BenchmarkEntry]:
+    """Load public benchmarks, optionally including development fixtures."""
     entries: dict[str, BenchmarkEntry] = {}
     for path in _catalog_paths():
         for raw in yaml.safe_load(path.read_text()) or []:
             entry = BenchmarkEntry.model_validate(raw)
             entries[entry.ref] = entry
-    return entries
+    return {ref: entry for ref, entry in entries.items() if include_internal or not entry.internal}
 
 
-def get_benchmark(ref: str) -> BenchmarkEntry:
-    """Resolve `id@version`, or `id` to its latest version."""
-    catalog = load_catalog()
+def get_benchmark(ref: str, *, include_internal: bool = True) -> BenchmarkEntry:
+    """Resolve a benchmark, including fixtures for explicit development runs and old records."""
+    catalog = load_catalog(include_internal=include_internal)
     if "@" in ref:
         if ref in catalog:
             return catalog[ref]

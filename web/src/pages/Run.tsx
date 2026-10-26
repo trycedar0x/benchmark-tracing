@@ -13,7 +13,7 @@ import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import { errorMessage, money, num, pct, who } from '@/lib/format'
+import { errorMessage, money, num, pct, resolvedModelsNote, runMetric, who } from '@/lib/format'
 import { api, TERMINAL } from '../api'
 
 const OUTCOMES = ['correct', 'incorrect', 'partial', 'error', 'unscored', 'cancelled']
@@ -56,6 +56,7 @@ export default function RunPage() {
   if (!r) return <Skeleton className="h-64 w-full" />
   const versions = (r.manifest?.versions ?? {}) as Record<string, string>
   const total = samples.data?.total ?? 0
+  const metric = runMetric(r)
 
   return (
     <div className="grid gap-4">
@@ -64,7 +65,9 @@ export default function RunPage() {
           <p className="font-mono text-xs text-muted-foreground">{r.id}</p>
           <h1 className="flex flex-wrap items-center gap-2 text-2xl font-semibold tracking-tight">
             {r.benchmark}{' '}
-            <span className="font-mono text-lg font-normal text-muted-foreground">{who(r.model, r.agent)}</span>
+            <span className="font-mono text-lg font-normal text-muted-foreground">
+              {who(r.model, r.agent, r.target)}
+            </span>
             <StatusBadge value={r.status} />
           </h1>
         </div>
@@ -93,13 +96,21 @@ export default function RunPage() {
       )}
       <Card>
         <CardContent className="grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-6">
-          <Stat label="Accuracy" value={pct(r.accuracy)} sub={`${r.n_correct} correct`} />
+          <Stat
+            label={metric.label}
+            value={pct(metric.value)}
+            sub={
+              r.target_kind === 'external_agent'
+                ? `${pct(r.accuracy)} fully-correct accuracy`
+                : `${r.n_correct} correct`
+            }
+          />
           <Stat
             label="Progress"
             value={`${r.samples_done}/${r.samples_total ?? '?'}`}
             sub={<Progress value={r.samples_total ? (100 * r.samples_done) / r.samples_total : 0} className="mt-1" />}
           />
-          <Stat label="Errors" value={r.n_error} sub="excluded from accuracy" />
+          <Stat label="Errors" value={r.n_error} sub={`excluded from ${metric.label.toLowerCase()}`} />
           <Stat
             label="Tokens"
             value={num(r.input_tokens + r.output_tokens)}
@@ -113,7 +124,7 @@ export default function RunPage() {
           <Stat
             label="Resolved model"
             value={<span className="font-mono text-sm">{r.resolved_models.join(', ') || '–'}</span>}
-            sub={r.resolved_models.length > 1 ? 'more than one revision' : undefined}
+            sub={resolvedModelsNote(r)}
           />
         </CardContent>
       </Card>

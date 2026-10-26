@@ -1,18 +1,17 @@
 # Examples
 
-Each example runs offline with the bundled mock models, except the two agent framework examples and the tau3-bench agents, which call a real model API. The [user guide](../docs/guide.md) explains what the output means.
+Examples for tracing agents and evaluating real models. Benchmark and framework examples require provider credentials; the SDK and OTLP tracing examples do not. The [user guide](../docs/guide.md) explains setup and output. The API regression script starts runs directly and requires a server explicitly configured with `EVERYBENCH_REQUIRE_QUOTE=0`.
 
 | Example | Shows | Run it |
 | --- | --- | --- |
-| [`cli_tour.sh`](cli_tour.sh) | Catalog, quote and budget cap, run, compare, trace, diff, dataset drafts | `bash examples/cli_tour.sh` |
-| [`sdk_trace_agent.py`](sdk_trace_agent.py) | Tracing your own agent: model and tool spans, token counts, content, an error case, receipts | `uv run python examples/sdk_trace_agent.py` |
-| [`openai_agents_trace.py`](openai_agents_trace.py) | An [OpenAI Agents SDK](https://openai.github.io/openai-agents-python/) agent with a tool, traced through OpenInference. Needs `OPENAI_API_KEY` | `uv run --with openai-agents --with openinference-instrumentation-openai-agents python examples/openai_agents_trace.py` |
-| [`langchain_agent_trace.py`](langchain_agent_trace.py) | The same agent built with LangChain's `create_agent` (runs on LangGraph). Needs `OPENAI_API_KEY`, or set `LANGCHAIN_MODEL` for another provider | `uv run --with langchain --with langchain-openai --with openinference-instrumentation-langchain python examples/langchain_agent_trace.py` |
-| [`tau3_agents/`](tau3_agents) | Two agents for real use cases, scored on tau3-bench (2026): retail support on the OpenAI Agents SDK and bank support on LangGraph, each compared with a plain agent on the same framework. Needs Docker and `OPENAI_API_KEY` | `uv run everybench run tau3-retail -m openai/gpt-5-mini --agent examples.tau3_agents.harbor_agents:RetailSupportAgent` (see its [README](tau3_agents/README.md)) |
-| [`otlp_json.sh`](otlp_json.sh) | Sending a trace as OTLP/JSON with `curl`, for apps not written in Python | `bash examples/otlp_json.sh` |
-| [`api_regression_gate.py`](api_regression_gate.py) | Starting runs over the HTTP API and failing CI on a clear regression | `uv run python examples/api_regression_gate.py --limit 20` |
+| [`sdk_trace_agent.py`](sdk_trace_agent.py) | SDK tracing without a model API: model and tool spans, content, errors and receipts | `uv run python examples/sdk_trace_agent.py` |
+| [`openai_agents_trace.py`](openai_agents_trace.py) | OpenAI Agents SDK tracing through OpenInference; needs `OPENAI_API_KEY` | `uv run --with openai-agents --with openinference-instrumentation-openai-agents python examples/openai_agents_trace.py` |
+| [`langchain_agent_trace.py`](langchain_agent_trace.py) | LangChain/LangGraph tracing; needs `OPENAI_API_KEY` | `uv run --with langchain --with langchain-openai --with openinference-instrumentation-langchain python examples/langchain_agent_trace.py` |
+| [`tau3_agents/`](tau3_agents) | Retail and bank support agents scored on tau3-bench; needs Docker and provider credentials | See its [README](tau3_agents/README.md) |
+| [`otlp_json.sh`](otlp_json.sh) | Sending OTLP/JSON traces with `curl` | `bash examples/otlp_json.sh` |
+| [`api_regression_gate.py`](api_regression_gate.py) | Failing CI on a clear regression; paid model calls | `uv run python examples/api_regression_gate.py --benchmark gsm8k --baseline openai/gpt-4o-mini --candidate anthropic/claude-haiku-4-5 --limit 20` |
 
-`cli_tour.sh` uses a throwaway `EVERYBENCH_HOME`. The others talk to a running server:
+The SDK, OTLP and HTTP API examples talk to a running server:
 
 ```bash
 EVERYBENCH_INGEST_CONTENT=full uv run everybench serve    # keep this running in another terminal
@@ -20,11 +19,6 @@ EVERYBENCH_INGEST_CONTENT=full uv run everybench serve    # keep this running in
 
 Set `EVERYBENCH_URL` to use a server other than `http://127.0.0.1:8321`, and `EVERYBENCH_API_KEY` when authentication is on.
 
-For coding agents, start with [the integration guide](../docs/agents.md). The portable skills also bundle two executable examples, both usable outside this checkout:
+## Development smoke test
 
-| Example | Contract | Run from this repository |
-| --- | --- | --- |
-| [SDK delivery smoke test](../skills/everybench-sdk/scripts/trace_smoke.py) | Fake model + tool trace, metadata only, JSON health/receipt report; exit 0 delivered, 2 incomplete | `uv run python skills/everybench-sdk/scripts/trace_smoke.py --timeout 10` |
-| [Bounded evaluation gate](../skills/everybench/scripts/evaluate.py) | Mock baseline/candidate, finite polling, JSON comparison; exit 0 no clear regression, 1 regression, 2 blocked/error | `uv run python skills/everybench/scripts/evaluate.py --candidate mock/strong --timeout 120` |
-
-Both require a running server but no provider keys for their default workflows. The evaluation helper uses only the standard library; the SDK example requires everybench. Neither installs dependencies, launches a server, or grants permission to spend.
+`bash examples/cli_tour.sh` exercises internal fixtures with mock models in a throwaway `EVERYBENCH_HOME`. It is a developer test, not a supported product benchmark or a model-quality evaluation.

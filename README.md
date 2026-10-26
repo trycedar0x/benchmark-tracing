@@ -5,60 +5,40 @@
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](pyproject.toml)
 
-Run established benchmarks against any model, trace your own agents with the Python SDK, and compare runs with paired statistics. Built for coding-agent workflows through SDK, HTTP API and CLI, with an optional web UI. Open source, local-first, no account needed.
+Evaluate the agent you already run: load benchmark cases, invoke your callable or HTTP service, collect its real answer and execution trace, grade the results, and compare changes. Open source, local-first, no account needed. Existing model benchmarks remain available.
 
-![Comparing two runs of the same benchmark: score difference with a confidence interval, McNemar's test, and the per-task regressions and improvements](docs/media/ui-2-compare.png)
+The SDK and CLI share one user-agent evaluation engine. Configure invocation and trace acquisition independently; inspect outcomes and component scores in the CLI or web UI.
 
-everybench reuses existing evaluation tools instead of rebuilding them: [Inspect AI](https://github.com/UKGovernmentBEIS/inspect_ai) runs the benchmarks and [inspect_evals](https://github.com/UKGovernmentBEIS/inspect_evals) supplies them. everybench adds the parts around them:
+User-agent evaluation does not construct an agent or require Docker. [Inspect AI](https://github.com/UKGovernmentBEIS/inspect_ai), [inspect_evals](https://github.com/UKGovernmentBEIS/inspect_evals) and Harbor remain compatibility runners for existing model/sandbox benchmarks. EveryBench adds:
 
-- **A versioned catalog.** Each entry pins one benchmark variant (task, arguments, grader). Runs on different variants are never silently compared.
-- **Quotes and budget caps.** Run a small sample, get a token and cost estimate with a 95% range, approve it, and the run stops when it reaches its cap.
-- **Traces for every task.** Model calls, tool calls, sandbox commands and grading become a span tree linked to the task's outcome.
-- **Paired comparison.** Per-task regressions and improvements, a bootstrap confidence interval on the score difference, and McNemar's test. Execution errors are reported separately and never counted as wrong answers.
-- **Model identity checks.** Every model call records which model actually answered. A run served by more than one model revision is blocked from strict comparison.
+- **User-owned targets.** Existing callable/HTTP agents, independently authorized trace sources, real identity/version/configuration and explicit failure states.
+- **A versioned catalog.** Each entry pins one benchmark variant (task, arguments, grader). Different variants and grading contracts are never silently compared.
+- **Compatibility-runner quotes and reported-cost caps.** Existing model runners retain estimates/budget controls; user-owned remote execution has unknown total cost, not an all-inclusive billing cap.
+- **Actual execution evidence.** Captured model/tool actions form task-linked traces. Missing, withheld or evaluator-only evidence cannot replace the agent's own execution.
+- **Paired comparison.** Per-task changes, bootstrap score-difference intervals and McNemar's test, with execution errors reported separately from incorrect answers.
+- **Target-aware identity checks.** Legacy single-model revision checks remain; legitimate multi-model external agents retain their composition without false revision-drift rejection.
 
-## For coding agents
+## Evaluate your existing agent
 
-Start with **[the agent integration guide](docs/agents.md)**. It covers three distinct interfaces: the **Python SDK** for instrumenting your application and verifying trace delivery, the **HTTP API** for scheduling benchmarks and consuming structured results, and the **CLI** for local execution and inspection. The SDK currently handles tracing, not benchmark execution or comparison.
+Start with [the user-agent SDK/CLI guide](docs/evaluating-your-agent.md): callable/custom-benchmark examples, strict HTTP/NDJSON targets, separate trace authorization, reports and comparison. `everybench evaluate` currently includes two explicitly configured experimental finance adapters; other benchmarks can implement the neutral SDK contract. No default paid evaluator or automatic retry is supplied.
 
-Install the portable **[everybench and everybench-sdk skills](skills/README.md)** in your coding agent's consuming project. They include API/SDK references, an offline SDK delivery check, and a bounded JSON regression-gate script. No browser or interactive prompts are required for those workflows. If you are changing this repo rather than using the tool, read [AGENTS.md](AGENTS.md).
+[Acceptance evidence](docs/user-agent-evaluation-acceptance.md) records offline integration and one authorized financial-app case, including its failed raw-data matching component. The single-case result is not official leaderboard parity or authorization for another run.
 
-The [human walkthrough](docs/guide.md) and UI remain available; agents should use structured results rather than scrape terminal tables or screenshots.
+## Quick start
 
-### Copy and paste into your coding agent
-
-Open your project in your coding agent and paste this prompt. It works whether or not you already have an everybench checkout:
-
-```text
-Help me set up everybench in this project for agent tracing and benchmark regression checks.
-
-Source: https://github.com/trycedar0x/benchmark-tracing
-Read docs/agents.md and skills/README.md from that repository (use a local checkout if available). Install the relevant everybench and everybench-sdk skill folders into this project's supported skill directory, keeping their bundled references and scripts.
-
-Inspect this project's language, agent framework and existing tests, then propose the smallest useful integration. Use the Python SDK for tracing Python agents, OTLP for other languages, and the HTTP API or CLI for benchmark execution and comparison. The Python SDK handles tracing, not benchmark scheduling.
-
-First verify setup with the bundled offline SDK smoke test and mock-model regression gate. Reuse an existing server if configured; otherwise use an isolated local setup. Default to metadata-only capture, keep credentials out of output, and ask before paid model calls (including quote creation), Docker benchmark downloads or production-data access.
-
-Report what you installed or changed, the checks you ran, trace/run IDs and any blockers. Do not claim a successful trace means a benchmark passed, or that an inconclusive comparison proves improvement.
-```
-
-## Quick start (offline, no API keys)
-
-Nothing to install with [uv](https://docs.astral.sh/uv/):
+Install the benchmark suite with [uv](https://docs.astral.sh/uv/) and configure a provider key. The evaluation below calls a paid model and asks for confirmation:
 
 ```bash
-uvx everybench catalog
-uvx everybench run toy-arith -m mock/strong -m mock/weak
-uvx everybench compare <run-a> <run-b>
-uvx everybench trace <run-b> arith-001
-uvx everybench serve                                 # web UI at http://127.0.0.1:8321
+uv tool install --python 3.12 "everybench[benchmarks]"
+export OPENAI_API_KEY=...
+everybench catalog
+everybench run gsm8k -m openai/gpt-4o-mini --limit 20
+everybench serve                                     # web UI at http://127.0.0.1:8321
 ```
 
-![Terminal: comparing two runs, printing the span tree of a failed task, and diffing the two runs' trajectories to the step where they diverged](docs/media/cli-compare-trace-diff.gif)
+After a run finishes, use `everybench show <run-id>` to inspect its samples and `everybench trace <run-id> <sample-id>` to view a task's span tree.
 
-To install it instead, run `uv tool install everybench` or `pip install everybench`. From a clone, run `uv sync` and prefix commands with `uv run`, as the rest of this README does.
-
-`mock/*` models are deterministic mock models bundled for demos and tests. `toy-arith` and `toy-tools` are bundled benchmarks; `toy-tools` exercises tool calls.
+Alternatively, use `pip install "everybench[benchmarks]"`. From a clone, run `uv sync --extra benchmarks` and prefix commands with `uv run`, as the rest of this README does.
 
 New here? The [user guide](docs/guide.md) walks through reading comparisons, tracing your own agent and gating CI, and [`examples/`](examples) has runnable CLI, SDK, OTLP and HTTP API examples.
 
@@ -83,7 +63,6 @@ Agent benchmarks (Terminal-Bench, SWE-bench Verified, Aider Polyglot) run throug
 
 ```bash
 uv sync --extra harbor                # or: uv tool install --python 3.12 "everybench[harbor]"
-uv run everybench run harbor-smoke -m oracle -m nop                 # bundled tasks, no API keys
 uv run everybench run terminal-bench -m terminus-2:openai/gpt-4o --limit 10 --yes
 ```
 
@@ -126,7 +105,7 @@ An [OpenAI Agents SDK agent](examples/openai_agents_trace.py) traced through Ope
 
 ![Span tree of an OpenAI Agents SDK run: agent, turns, model calls with token counts, and a lookup_order tool call](docs/media/ui-9-openai-agents-trace.png)
 
-Delivery is crash-safe. The content policy is applied before anything touches disk. Every batch is written to a local spool (fsync and atomic rename) before it is sent, and is deleted only after the server acknowledges it. Batches left behind by a crash are sent by the next client for the same endpoint. Each batch has a stable id, so a retry after a lost acknowledgement is not stored twice. A full spool refuses new spans and reports them in `ee.health()` instead of silently dropping them. When a `trace` block exits, it seals the trace with its span count. The trace shows as `closed` once every span has arrived, or `incomplete` if some are missing. A closed trace means everything the producer declared was received. It does not prove the instrumentation was complete.
+Exported batches use a local disk spool with fsync and atomic rename before delivery, and are removed after acknowledgement; buffered spans not yet exported can still be lost on a crash. Content policy is applied before spool persistence. Stable batch IDs prevent duplicate storage after a lost acknowledgement; full spools refuse spans and expose health failures. Producer seals declare expected span counts, allowing received traces to be marked closed or incomplete. A closed trace proves receipt of what the producer declared, not complete instrumentation or disclosure; withheld/partial content remains explicit. Existing buffering/spool edge cases are not a universal crash-safety guarantee.
 
 The server stores ingested content according to `EVERYBENCH_INGEST_CONTENT` (default `metadata`). A client can ask for a stricter policy than the server's, but not a looser one.
 
@@ -191,7 +170,7 @@ The database schema is managed with Alembic migrations, applied automatically on
 
 ## How it works
 
-Each run executes in its own child process. Inspect hooks stream every finished sample into the database as it completes, with its result and spans. Budget stops and cancellation send the child a SIGINT, which Inspect handles as a graceful cancel and writes a partial log. Samples interrupted that way are marked `cancelled`, not `error`. With a budget, at most four samples run at once, so a stop overshoots by at most a few in-flight calls.
+User-agent `evaluate` runs the shared SDK engine: select original cases, invoke the existing agent once per case, acquire independently configured traces, grade and persist policy-filtered evidence/reports. Legacy `run` experiments execute in child processes through Inspect or Harbor; their hooks/trajectory conversion retain existing task traces. Both paths preserve distinct execution failures and incorrect scored answers.
 
 State lives in `~/.everybench` (override with `EVERYBENCH_HOME`): a SQLite database and the original Inspect logs, which open in [Inspect View](https://inspect.aisi.org.uk/log-viewer.html). Set `EVERYBENCH_DATABASE_URL` to use Postgres.
 
@@ -208,12 +187,20 @@ Early but complete for its first scope: CLI, API server and job queue, web UI, t
 ## Development
 
 ```bash
-uv sync --all-extras
+uv sync --extra benchmarks --extra eee --extra postgres --extra finance
+# For legacy Harbor validation, use a separate environment and replace --extra finance with --extra harbor.
+# --all-extras is intentionally incompatible: finance needs OpenAI >=3.4, Harbor/LiteLLM needs <3.
 uv run pytest                                   # SQLite
 EVERYBENCH_TEST_POSTGRES=postgresql+psycopg://postgres:pw@localhost/postgres uv run pytest   # Postgres
 uv run ruff check src tests
 npm --prefix web ci && npm --prefix web run build
 ```
+
+Internal smoke-test fixtures are excluded from the public catalog and benchmark picker. Developers can inspect them with `uv run everybench catalog --include-internal`; explicit fixture runs remain available for tests. `bash examples/cli_tour.sh` exercises the pipeline offline in a throwaway data directory.
+
+Evaluate your own callable or HTTP agent using the shared SDK/CLI engine: [User-agent evaluation guide](docs/evaluating-your-agent.md).
+
+Experimental finance tasks and their offline validation workflow are documented in [Finance evaluations](docs/finance-evaluations.md). They are not listed in the public catalog; live-service validation is still pending, and finance quotes/all-inclusive budget caps are intentionally disabled.
 
 ## License
 

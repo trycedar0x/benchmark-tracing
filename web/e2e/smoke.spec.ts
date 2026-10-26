@@ -63,13 +63,34 @@ test('core pages render without errors', async ({ page, request }) => {
 })
 
 test('quote, approve and run from the UI', async ({ page }) => {
+  // Inject a development fixture only for this test; public catalogs never list it.
+  await page.route('**/api/catalog', async (route) => {
+    const response = await route.fetch()
+    const entries = await response.json()
+    await route.fulfill({ response, json: [...entries, { ...entries[0], ref: 'toy-arith@1', task_count: 40 }] })
+  })
   await page.goto('/new')
+  await page.locator('#benchmark').click()
+  await page.getByRole('option', { name: /toy-arith@1/ }).click()
+  await page.locator('#models').fill('mock/strong\nmock/weak')
   await page.getByRole('button', { name: 'Get quote' }).click()
   await expect(page.getByText('Upper estimate')).toBeVisible({ timeout: 60_000 })
   await page.locator('#cap').fill('1')
   await page.getByRole('button', { name: 'Approve and run' }).click()
   await expect(page).toHaveURL(/\/$/)
   await expect(page.getByText('mock/weak').first()).toBeVisible()
+})
+
+test('public onboarding does not expose internal benchmarks', async ({ page }) => {
+  await page.goto('/catalog')
+  await expect(page.getByText('gsm8k@1', { exact: true })).toBeVisible()
+  await expect(page.getByText(/toy-arith|toy-tools|harbor-smoke/)).toHaveCount(0)
+  await page.goto('/new')
+  await expect(page.locator('#models')).toHaveValue('')
+  await expect(page.getByRole('button', { name: 'Get quote' })).toBeDisabled()
+  await page.locator('#benchmark').click()
+  await expect(page.getByRole('option', { name: /gsm8k@1/ })).toBeVisible()
+  await expect(page.getByRole('option', { name: /toy-arith|toy-tools|harbor-smoke/ })).toHaveCount(0)
 })
 
 test('draft, review and approve dataset items from run failures', async ({ page, request }) => {

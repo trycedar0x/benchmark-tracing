@@ -61,7 +61,7 @@ export default function ComparePage() {
                 <SelectContent>
                   {runs.data?.map((r) => (
                     <SelectItem key={r.id} value={r.id}>
-                      {r.id} · {r.benchmark} · {who(r.model, r.agent)} · {r.status}
+                      {r.id} · {r.benchmark} · {who(r.model, r.agent, r.target)} · {r.status}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -113,8 +113,8 @@ export default function ComparePage() {
                 <CardHeader>
                   <CardTitle>{c.run_a.benchmark}</CardTitle>
                   <CardDescription>
-                    A = <span className="font-mono">{who(c.run_a.model, c.run_a.agent)}</span>, B ={' '}
-                    <span className="font-mono">{who(c.run_b.model, c.run_b.agent)}</span>
+                    A = <span className="font-mono">{who(c.run_a.model, c.run_a.agent, c.run_a.target)}</span>, B ={' '}
+                    <span className="font-mono">{who(c.run_b.model, c.run_b.agent, c.run_b.target)}</span>
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-6">

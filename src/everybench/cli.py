@@ -24,7 +24,15 @@ from everybench.compare import compare_runs
 from everybench.config import env
 from everybench.db import Quote, Run, SampleResult, Span, Trace, session_scope
 from everybench.execution import execute_run, request_cancel
-from everybench.service import PlanError, approve_quote, create_quote, create_runs, is_paid, runs_from_quote
+from everybench.service import (
+    PlanError,
+    approve_quote,
+    billed_models,
+    create_quote,
+    create_runs,
+    is_paid,
+    runs_from_quote,
+)
 from everybench.trace_diff import content_field
 
 app = typer.Typer(
@@ -46,8 +54,11 @@ AgentOpt = Annotated[
 ]
 
 
-def _who(model: str, agent: str | None) -> str:
-    """A run's model, with its custom agent's class name when there is one."""
+def _who(model: str | None, agent: str | None, target: dict | None = None) -> str:
+    """Render actual external target identity, not a fictitious model."""
+    if model is None:
+        target = target or {}
+        return f"{target.get('name', 'External agent')} ({target.get('version') or 'unversioned'})"
     return f"{model} · {agent.rsplit(':', 1)[-1]}" if agent else model
 
 
@@ -71,6 +82,12 @@ def _accuracy(run: Run) -> float | None:
     return run.n_correct / scored if scored else None
 
 
+def _primary_metric(run: Run) -> tuple[str, float | None]:
+    if run.target_kind == "external_agent":
+        return "Score", (run.metrics or {}).get("mean_score")
+    return "Accuracy", _accuracy(run)
+
+
 def _confirm_paid(models: list[str], yes: bool, what: str) -> None:
     paid = [m for m in models if is_paid(m)]
     if paid and not yes:
@@ -86,11 +103,12 @@ def _confirm_paid(models: list[str], yes: bool, what: str) -> None:
 def catalog(
     benchmark: Annotated[str | None, typer.Argument(help="Show details for one benchmark.")] = None,
     as_json: Annotated[bool, typer.Option("--json")] = False,
+    include_internal: Annotated[bool, typer.Option("--include-internal", hidden=True)] = False,
 ) -> None:
     """List benchmarks in the catalog, or show one."""
     if benchmark:
         try:
-            entry = get_benchmark(benchmark)
+            entry = get_benchmark(benchmark, include_internal=include_internal)
         except CatalogError as ex:
             _fail(str(ex))
         data = entry.model_dump() | {"ref": entry.ref, "variant_key": entry.variant_key}
@@ -103,7 +121,7 @@ def catalog(
                 table.add_row(f"[dim]{key}[/dim]", escape(str(value)))
         console.print(table)
         return
-    entries = sorted(load_catalog().values(), key=lambda e: (not e.offline, e.id))
+    entries = sorted(load_catalog(include_internal=include_internal).values(), key=lambda e: e.id)
     if as_json:
         print(json.dumps([e.model_dump() | {"ref": e.ref} for e in entries]))
         return
@@ -117,7 +135,8 @@ def catalog(
     families = len({e.family for e in entries})
     console.print(
         f"{len(entries)} variants across {families} benchmark families. "
-        "Real benchmarks need `uv sync --extra benchmarks` (inspect_evals)."
+        "Inspect benchmarks need `uv sync --extra benchmarks`; "
+        "Harbor benchmarks need `uv sync --extra harbor` and Docker."
     )
 
 
@@ -217,7 +236,7 @@ def _progress_table(runs: dict[str, Run]) -> Table:
         )
         table.add_row(
             run.id,
-            _who(run.model, run.agent),
+            _who(run.model, run.agent, run.target),
             f"[{color}]{run.status}[/{color}]",
             progress,
             _pct(_accuracy(run)),
@@ -285,7 +304,7 @@ def run(
             if not benchmark or not model:
                 _fail("Give a benchmark and at least one --model, or --quote.")
             entry = get_benchmark(benchmark)
-            _confirm_paid(model, yes, "This run")
+            _confirm_paid(billed_models(entry, model), yes, "This run (including configured evaluators)")
             runs = create_runs(
                 entry, model, limit=limit, epochs=epochs, budget_usd=budget, content_policy=content, agent=agent
             )
@@ -328,17 +347,20 @@ def list_runs(
         rows = session.scalars(select(Run).order_by(Run.created_at.desc()).limit(limit * 3)).all()
         rows = [r for r in rows if include_quotes or (r.manifest or {}).get("purpose") != "quote"][:limit]
         table = Table(title="Recent runs")
-        for col in ("Run", "Created", "Benchmark", "Model", "Status", "Samples", "Accuracy", "Errors", "Cost"):
+        metric_column = "Accuracy"
+        if any(r.target_kind == "external_agent" for r in rows):
+            metric_column = "Score" if all(r.target_kind == "external_agent" for r in rows) else "Score / Accuracy"
+        for col in ("Run", "Created", "Benchmark", "Model", "Status", "Samples", metric_column, "Errors", "Cost"):
             table.add_column(col)
         for r in rows:
             table.add_row(
                 r.id,
                 r.created_at.strftime("%Y-%m-%d %H:%M"),
                 r.benchmark,
-                _who(r.model, r.agent),
+                _who(r.model, r.agent, r.target),
                 r.status,
                 f"{r.samples_done}/{r.samples_total or '?'}",
-                _pct(_accuracy(r)),
+                _pct(_primary_metric(r)[1]),
                 str(r.n_error),
                 _money(r.cost_usd),
             )
@@ -366,12 +388,13 @@ def show(
             ("run", r.id),
             ("benchmark", r.benchmark),
             ("variant", r.variant_key),
-            ("model", r.model),
+            ("target", _who(r.model, r.agent, r.target)),
             ("agent", r.agent or "catalog default"),
             ("resolved models", ", ".join(r.resolved_models or []) or "–"),
             ("status", r.status),
             ("samples", f"{r.samples_done}/{r.samples_total or '?'}"),
-            ("accuracy", _pct(_accuracy(r))),
+            (_primary_metric(r)[0].lower(), _pct(_primary_metric(r)[1])),
+            *([("fully-correct accuracy", _pct(_accuracy(r)))] if r.target_kind == "external_agent" else []),
             ("errors", r.n_error),
             ("tokens", f"{r.input_tokens:,} in / {r.output_tokens:,} out"),
             ("estimated cost", _money(r.cost_usd)),
@@ -548,7 +571,10 @@ def compare(
         raise typer.Exit(2)
     a, b = result.run_a, result.run_b
     summary = Table(
-        title=f"{a['benchmark']}: A={_who(a['model'], a.get('agent'))} vs B={_who(b['model'], b.get('agent'))}"
+        title=(
+            f"{a['benchmark']}: A={_who(a['model'], a.get('agent'), a.get('target'))} "
+            f"vs B={_who(b['model'], b.get('agent'), b.get('target'))}"
+        )
     )
     for col in ("", "A", "B", "Δ (B−A)", "95% CI", "McNemar p"):
         summary.add_column(col)
@@ -901,6 +927,93 @@ def worker(concurrency: Annotated[int, typer.Option(help="Jobs to run at once.")
     w = Worker(concurrency=concurrency)
     console.print(f"Worker {w.name} with {concurrency} slot(s); Ctrl-C to stop.")
     w.run_forever()
+
+
+@app.command()
+def evaluate(
+    benchmark: Annotated[str, typer.Argument(help="findeepindicator or bigfinance-public-50 (experimental).")],
+    url: Annotated[str, typer.Option("--url", help="Explicit user-owned NDJSON chat endpoint.")],
+    name: Annotated[str, typer.Option("--name", help="Actual agent identity.")],
+    judge: Annotated[
+        list[str],
+        typer.Option(
+            "--judge", help="Explicit openai/openrouter/anthropic or registered mock model; repeat for a jury."
+        ),
+    ],
+    version: Annotated[str | None, typer.Option("--version")] = None,
+    token_env: Annotated[str | None, typer.Option("--token-env")] = None,
+    trace_url: Annotated[str | None, typer.Option("--trace-url")] = None,
+    trace_token_env: Annotated[str | None, typer.Option("--trace-token-env")] = None,
+    trace_store: Annotated[bool, typer.Option("--trace-store", help="Use the local EveryBench trace store.")] = False,
+    workspace_id: Annotated[str | None, typer.Option("--workspace-id")] = None,
+    extractor: Annotated[str | None, typer.Option("--extractor")] = None,
+    data_path: Annotated[
+        Path | None, typer.Option("--data-path", help="Offline pinned dataset; SHA-256 checked.")
+    ] = None,
+    sample_id: Annotated[list[str] | None, typer.Option("--sample-id")] = None,
+    limit: Annotated[int | None, typer.Option("--limit", min=1)] = None,
+    timeout: Annotated[float, typer.Option("--timeout", min=0.001)] = 40,
+    trace_timeout: Annotated[float, typer.Option("--trace-timeout", min=0)] = 10,
+    grading_timeout: Annotated[float, typer.Option("--grading-timeout", min=0.001)] = 180,
+    content: Annotated[
+        str, typer.Option("--content", help="metadata, redacted, or full; applied before persistence.")
+    ] = "redacted",
+    yes: Annotated[bool, typer.Option("--yes", help="Consent to agent and evaluator calls; NOT a cost cap.")] = False,
+    as_json: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Evaluate your agent, without a built-in solver, Docker or retries."""
+    if not yes:
+        _fail("External evaluation requires explicit --yes before any agent or evaluator invocation.")
+    if trace_store and trace_url or trace_token_env and not trace_url:
+        _fail("Choose either --trace-store or --trace-url; trace credentials require --trace-url.")
+    from everybench.evaluation import HttpAgent, HTTPTraceSource, StoreTraceSource, evaluate_sync, report_path
+
+    try:
+        import os
+
+        trace_key = os.environ.get(trace_token_env) if trace_token_env else None
+        if trace_token_env and not trace_key:
+            _fail("The trace token environment variable is not set.")
+        if token_env and not os.environ.get(token_env):
+            _fail("The agent token environment variable is not set.")
+        source = (
+            HTTPTraceSource(trace_url, api_key=trace_key, workspace_id=workspace_id)
+            if trace_url
+            else StoreTraceSource(workspace_id=workspace_id)
+            if trace_store
+            else None
+        )
+        target = HttpAgent(url, name=name, version=version, token_env=token_env, timeout=timeout)
+        report = evaluate_sync(
+            benchmark,
+            target,
+            trace_source=source,
+            allow_paid=yes,
+            sample_ids=sample_id,
+            limit=limit,
+            timeout=timeout,
+            trace_timeout=trace_timeout,
+            grading_timeout=grading_timeout,
+            content_policy=content,
+            workspace_id=workspace_id,
+            judge_models=judge,
+            extractor_model=extractor,
+            data_path=data_path,
+        )
+    except ValueError:
+        _fail(
+            "Invalid evaluation configuration, dataset or evaluator client; no valid report produced. "
+            "External finance supports openai/openrouter/anthropic and registered mock models. "
+            "Install everybench[finance] and configure explicit evaluator credentials."
+        )
+    except KeyboardInterrupt:
+        _fail("Evaluation cancelled; inspect the persisted cancelled run/report.", code=130)
+    if as_json:
+        print(report.model_dump_json())
+    else:
+        console.print(f"{report.run_id}: {report.status}; report: {report_path(report.run_id)}")
+    if report.status != "succeeded":
+        raise typer.Exit(1)
 
 
 def main() -> None:

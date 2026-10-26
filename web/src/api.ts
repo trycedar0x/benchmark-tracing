@@ -1,3 +1,10 @@
+export type RunTarget = {
+  kind?: string
+  name?: string
+  identity?: string
+  version?: string | null
+}
+
 export type Run = {
   id: string
   group_id: string | null
@@ -7,7 +14,9 @@ export type Run = {
   status: string
   benchmark: string
   variant_key: string
-  model: string
+  model: string | null
+  target_kind?: 'model' | 'external_agent'
+  target?: RunTarget
   agent: string | null
   resolved_models: string[]
   limit: number | null
@@ -26,6 +35,7 @@ export type Run = {
   log_path: string | null
   error: string | null
   accuracy: number | null
+  score: number | null
   purpose: string
   manifest?: Record<string, unknown>
   outcomes?: Record<string, number>
@@ -151,7 +161,9 @@ export type PairRow = {
 export type Comparison = {
   run_a: {
     id: string
-    model: string
+    model: string | null
+    target_kind?: 'model' | 'external_agent'
+    target?: RunTarget
     agent: string | null
     benchmark: string
     status: string
@@ -159,7 +171,9 @@ export type Comparison = {
   }
   run_b: {
     id: string
-    model: string
+    model: string | null
+    target_kind?: 'model' | 'external_agent'
+    target?: RunTarget
     agent: string | null
     benchmark: string
     status: string

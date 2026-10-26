@@ -1,7 +1,6 @@
 """Start two runs over the HTTP API, wait for them, and fail when the candidate regresses.
 
     uv run everybench serve                      # in another terminal
-    uv run python examples/api_regression_gate.py
     uv run python examples/api_regression_gate.py --benchmark gsm8k@1 \
         --baseline openai/gpt-4o-mini --candidate anthropic/claude-haiku-4-5 --limit 50
 
@@ -39,9 +38,9 @@ def api(method: str, path: str, body: dict | None = None):
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--benchmark", default="toy-arith")
-    parser.add_argument("--baseline", default="mock/strong")
-    parser.add_argument("--candidate", default="mock/weak")
+    parser.add_argument("--benchmark", default="gsm8k")
+    parser.add_argument("--baseline", required=True)
+    parser.add_argument("--candidate", required=True)
     parser.add_argument("--limit", type=int)
     parser.add_argument("--max-drop", type=float, default=0.0, help="Allowed drop in score, e.g. 0.02 for 2 points.")
     args = parser.parse_args()
