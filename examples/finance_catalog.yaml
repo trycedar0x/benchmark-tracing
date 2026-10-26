@@ -1,0 +1,49 @@
+# Development only. Replace evaluator placeholders; these entries never appear in the public catalog.
+# They are EveryBench adaptations, not certified reproductions of official leaderboard protocols.
+- id: findeepindicator-dev
+  version: 1
+  family: FinDeepIndicator
+  internal: true
+  variant: pinned 3350-item release, EveryBench response-evaluation adaptation v1
+  adapter: inspect
+  task: everybench/finance_indicator
+  task_args:
+    judge_model: REPLACE_WITH_PROVIDER/JUDGE_SNAPSHOT
+    extractor_model: REPLACE_WITH_PROVIDER/EXTRACTOR_SNAPSHOT
+    solver_mode: research
+    max_turns: 20
+    tolerance: 0.01
+  scoring:
+    minimum: 0
+    maximum: 1
+    direction: maximize
+  grader: final-answer numeric accuracy; separate response-component evidence
+  task_count: 3350
+  license: Apache-2.0
+  requires: [chat, tools]
+  sandbox: docker
+  notes: Experimental. Evaluator calls and search may be billed. Quotes and all-inclusive budget caps are disabled.
+
+- id: bigfinance-public50-dev
+  version: 1
+  family: BigFinanceBench public-50
+  internal: true
+  variant: pinned public 50-item subset, EveryBench trace-rubric adaptation v1
+  adapter: inspect
+  task: everybench/finance_big_public50
+  task_args:
+    judge_models:
+      - REPLACE_WITH_PROVIDER/JUDGE_SNAPSHOT
+    solver_mode: research
+    max_turns: 50
+  scoring:
+    key: rubric
+    minimum: 0
+    maximum: 1
+    direction: maximize
+  grader: weighted trace-supported rubric; final-answer correctness reported separately
+  task_count: 50
+  license: CC-BY-4.0 (public data); Apache-2.0 (EveryBench code)
+  requires: [chat, tools]
+  sandbox: docker
+  notes: Experimental public subset only. One judge is explicitly labeled single-judge adaptation, not headline parity.

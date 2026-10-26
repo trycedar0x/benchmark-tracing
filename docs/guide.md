@@ -1,8 +1,8 @@
 # everybench user guide
 
-This guide walks you through everybench from a first offline run to tracing your own agent and gating CI on regressions. Every command here runs without API keys unless a section says otherwise. For a reference of every command and option, see the [README](../README.md) and `everybench --help`.
+This guide covers user-owned agent evaluation, tracing and legacy benchmark comparisons. Start with [Evaluate your own agent](evaluating-your-agent.md) for the shared SDK/CLI engine; the numbered model-runner walkthrough remains a separate compatibility workflow. Paid targets/evaluators require explicit authorization. See the [README](../README.md) and installed `everybench COMMAND --help` for exact interfaces.
 
-**Using everybench from a coding agent?** Start with [the agent integration guide](agents.md) and [installable skills](../skills/README.md). The Python SDK is a first-class tracing interface; the HTTP API handles automated benchmark execution and comparison. These workflows do not require a web build or browser.
+**Using a coding agent?** Read [the agent integration guide](agents.md) and [installable skills](../skills/README.md). The SDK supports both tracing and user-owned evaluation through distinct interfaces; the HTTP API schedules legacy runs and inspects/compares persisted results. No browser build is required for these workflows.
 
 Runnable versions of the examples are in [`examples/`](../examples). Building a customer support agent? [Shipping a retail support agent](retail-agent-guide.md) walks through benchmarking and tracing one end to end.
 
@@ -21,15 +21,21 @@ Runnable versions of the examples are in [`examples/`](../examples). Building a 
 
 ## Key ideas
 
-**Benchmark variant.** A catalog entry such as `toy-arith@1` pins the task, its arguments and its grader. Runs on different variants are never compared silently.
+**Benchmark variant.** A catalog entry such as `gsm8k@1` pins the task, its arguments and its grader. Runs on different variants are never compared silently.
 
-**Run.** One model on one benchmark variant. Each run has an id like `run_0687a9023c2a`.
+**Run.** One external agent or legacy model evaluated on a pinned benchmark/grading contract. A run has an ID such as `run_2fb0e6480df4`. External targets store real identity/version/public configuration separately from any models they use; one agent may legitimately invoke multiple models.
 
-**Sample.** One task inside a run, such as `arith-001`. Its outcome is `correct`, `incorrect`, `error` or `cancelled`. Errors are execution failures, not wrong answers, and are kept out of scores.
+**Sample.** One task inside a run, identified by its dataset sample id. Execution failures are reported separately from wrong answers and kept out of scores.
 
 **Trace.** The tree of steps (spans) behind one sample: model calls, tool calls, sandbox commands and grading. Traces can also come from your own app through the SDK or OpenTelemetry.
 
-**Mock models.** `mock/strong`, `mock/weak`, `mock/flaky` (sometimes errors) and `mock/drifty` (changes revision mid run) are deterministic fakes for learning and testing. Their prices are fictional.
+## Evaluate an existing agent
+
+Use [the SDK/CLI guide](evaluating-your-agent.md) to load original cases, invoke the existing callable or strict HTTP agent once, fetch its genuine trace independently, grade and persist the report. The deterministic `examples/evaluate_callable.py --yes` is an offline integration fixture with no provider calls; it does not need a running server or Docker.
+
+Named external finance adapters are experimental and use explicit evaluator models and a separate finance environment. Consent covers agent and judge invocations, not a hard cost cap. Keep references/rubrics away from the target and never fabricate trace events from its answer. Missing/withheld traces and agent/grading errors have null scores. External **Score** preserves fractional means; fully-correct accuracy remains separate. Compare compatible original cases and grading contracts, not unrelated agent runs.
+
+The [acceptance record](user-agent-evaluation-acceptance.md) records local validation and the operator-selected PR scope: the sibling financial app's instrumentation and private live artifacts are not included in this repository. Ordinary CI skips cross-repo tests when that separately supplied built app is absent.
 
 ## 1. Install
 
@@ -37,7 +43,7 @@ You need Python 3.12+ and [uv](https://docs.astral.sh/uv/).
 
 ```bash
 git clone https://github.com/trycedar0x/benchmark-tracing && cd benchmark-tracing
-uv sync
+uv sync --extra benchmarks
 uv run everybench --help
 ```
 
@@ -53,25 +59,22 @@ See what you can run:
 
 ```bash
 uv run everybench catalog
-uv run everybench catalog toy-arith      # details for one benchmark
+uv run everybench catalog gsm8k          # details for one benchmark
 ```
 
-Run two models on the same benchmark. They run in parallel with live progress:
+Configure `OPENAI_API_KEY` and `ANTHROPIC_API_KEY`, then run a small sample on two models. Both calls are billed by their providers. See section 5 for pricing configuration and the quote-and-budget workflow.
 
 ```bash
-uv run everybench run toy-arith -m mock/strong -m mock/weak
+export OPENAI_API_KEY=...
+export ANTHROPIC_API_KEY=...
+uv run everybench run gsm8k -m openai/gpt-4o-mini -m anthropic/claude-haiku-4-5 --limit 40
 ```
 
-```text
-│ run_0687a9023c2a │ mock/strong │ succeeded │ ████████████████████ 40/40 │ 97.5%    │ 0      │ 913    │ $0.0047 │
-│ run_fc637fac9091 │ mock/weak   │ succeeded │ ████████████████████ 40/40 │ 62.5%    │ 0      │ 913    │ $0.0005 │
-Compare: everybench compare run_0687a9023c2a run_fc637fac9091
-```
 
-The last line is the next command to run. Your run ids will differ.
+The run prints the ids to compare. Substitute those ids in the command below; results and cost depend on the models and samples you choose.
 
 ```bash
-uv run everybench compare run_0687a9023c2a run_fc637fac9091
+uv run everybench compare <run-a> <run-b>
 ```
 
 Lost the ids? `uv run everybench runs` lists recent runs.
@@ -79,13 +82,13 @@ Lost the ids? `uv run everybench runs` lists recent runs.
 ## 3. Reading the results
 
 ```text
-                toy-arith@1: A=mock/strong vs B=mock/weak
+                gsm8k@1: A=baseline vs B=candidate (illustrative)
 ┃                   ┃ A     ┃ B     ┃ Δ (B−A)   ┃ 95% CI         ┃ McNemar p ┃
 │ Score (40 paired) │ 97.5% │ 62.5% │ -35.0 pts │ -52.5 to -17.5 │ 0.000519  │
 Improvements: 1   Regressions: 15   Errors: A only 0, B only 0, both 0 (excluded from scores)
 ```
 
-How to read each part:
+The following numbers are illustrative, not measured results for these models. How to read each part:
 
 **Score (40 paired).** Both runs answered the same 40 samples, so they are compared sample by sample, not just as two averages. Pairing removes the noise of "this run happened to get easier questions".
 
@@ -99,7 +102,7 @@ How to read each part:
 
 **Errors.** Samples that crashed rather than answered. They are reported separately and excluded from the score, so a flaky provider does not look like a dumb model.
 
-The two statistics can disagree on small samples. Comparing `mock/strong` with `mock/flaky` on 20 samples gave a CI of `-47.1 to -5.9` (below zero) but `McNemar p = 0.125` (not significant), because only 4 samples disagreed. When that happens, run more samples before deciding.
+The two statistics can disagree on small samples: a confidence interval may exclude zero while McNemar's test is not significant because too few samples disagree. Run more samples before deciding.
 
 Every row, in machine-readable form:
 
@@ -109,7 +112,7 @@ uv run everybench compare <run-a> <run-b> --json
 
 ## 4. Finding out why a sample changed
 
-Start from a regression in the compare table, for example `arith-001`. Show the samples a run got wrong:
+Start from a regression in the compare table. Show the samples a run got wrong and copy one of their sample ids:
 
 ```bash
 uv run everybench show <run-b> --outcome incorrect --samples 5
@@ -118,37 +121,18 @@ uv run everybench show <run-b> --outcome incorrect --samples 5
 Print the span tree of one sample:
 
 ```bash
-uv run everybench trace <run-b> tools-006
+uv run everybench trace <run-b> <sample-id>
 ```
 
-```text
-trace 8ab06fd5db7e53796a8a8d92ab7a3d6a · inspect
-└── agent sample tools-006 1.07s “The answer is -9066”
-    ├── span solvers 885ms
-    │   └── solver generate 880ms
-    │       ├── model mock/weak 718ms 29→15 tok “tool call for tool calculator”
-    │       ├── tool calculator 1ms “-9069”
-    │       └── model mock/weak 35ms 38→12 tok “The answer is -9066”
-    └── span scorers 1ms
-        └── scorer match 1ms score=0.0 “-9066”
-```
 
-Here the calculator returned `-9069` but the model answered `-9066`: the tool was right and the model misread it.
+Follow the solver and model spans to the final answer, then check the scorer's explanation. Agent benchmarks also include tool steps when their trajectories record them.
 
 To see exactly where two runs went different ways on the same sample:
 
 ```bash
-uv run everybench diff <run-a> <run-b> tools-006
+uv run everybench diff <run-a> <run-b> <sample-id>
 ```
 
-```text
-A: correct (score 1.0)   B: incorrect (score 0.0)
-Diverged at step 3 (model mock/strong): differs: output.
-│ 1   │ model mock/strong │ calls calculator({'expression': '786 - 9855'}) │ calls calculator(...) │               │
-│ 2   │ tool calculator     │ {'expression': '786 - 9855'} → -9069           │ ... → -9069           │               │
-│ → 3 │ model mock/strong │ The answer is -9069                            │ The answer is -9066   │ output        │
-│ 4   │ scorer match        │ score 1.0 · answer -9069                       │ score 0.0 · answer ...│ answer, score │
-```
 
 The same views are in the web UI (section 8), which is easier for long traces.
 
@@ -367,6 +351,8 @@ Span kinds come from `openinference.span.kind` or `gen_ai.operation.name` (`chat
 
 Sealing (`POST /api/traces/<trace-id>/seal` with `{"expected_spans": N}`) is optional. Without it a trace stays `open`, because everybench cannot know whether more spans are coming.
 
+For an existing Node.js/TypeScript app, follow [Send TypeScript traces to EveryBench](typescript-tracing.md): reuse your OTel provider, configure export and privacy, verify delivery offline, and optionally add evaluation correlation and producer completion.
+
 ## 8. Using the HTTP API (CI regression gate)
 
 `everybench serve` runs the API, the web UI and two background workers. Build the UI once first:
@@ -380,7 +366,7 @@ Useful endpoints:
 
 | Endpoint | Purpose |
 | --- | --- |
-| `POST /api/runs` | Start runs: `{"benchmark": "toy-arith", "models": ["mock/strong"], "limit": 20}` |
+| `POST /api/runs` | Start approved runs: `{"quote_id": "<approved-quote-id>"}` |
 | `GET /api/runs/<id>` | Status (`queued`, `running`, `succeeded`, `failed`, `cancelled`, `budget_exceeded`) and progress |
 | `GET /api/compare?a=<id>&b=<id>` | The same comparison as `everybench compare --json` |
 | `POST /api/quotes`, `POST /api/quotes/<id>/approve` | Quote and approve paid runs |
@@ -391,19 +377,12 @@ Over the API, paid models need an approved quote unless the server sets `EVERYBE
 [`examples/api_regression_gate.py`](../examples/api_regression_gate.py) starts a baseline and a candidate run, waits, compares, and exits non-zero only on a clear regression (the whole 95% CI below the allowed drop). It uses only the Python standard library, so it runs in any CI image:
 
 ```bash
-uv run python examples/api_regression_gate.py --limit 20
+uv run python examples/api_regression_gate.py --benchmark gsm8k \
+  --baseline openai/gpt-4o-mini --candidate anthropic/claude-haiku-4-5 --limit 20
 ```
 
-```text
-Started run_a85b3c26ff37 (mock/strong) and run_180064789b1d (mock/weak)
-  mock/strong: running 12   mock/weak: running 1
-  mock/strong: succeeded 20   mock/weak: succeeded 20
-Score 100.0% → 70.0% (Δ -30.0 pts, 95% CI -50.0 to -10.0, McNemar p=0.0312)
-Regressed samples: arith-001, arith-007, arith-009, arith-011, arith-013, arith-017
-Inspect one: everybench diff run_a85b3c26ff37 run_180064789b1d <sample>
-```
 
-The exit code was 1. With `--candidate mock/strong` it reports no regressions and exits 0. For real models: `--benchmark gsm8k@1 --baseline openai/gpt-4o-mini --candidate anthropic/claude-haiku-4-5 --limit 50 --max-drop 0.02`.
+The script exits 1 only when the whole confidence interval is below the allowed drop, and exits 0 otherwise. It starts paid runs directly, so this example requires an explicitly configured server with `EVERYBENCH_REQUIRE_QUOTE=0`, provider credentials, and the benchmark dependencies installed. For normal interactive use, keep quote approval enabled.
 
 ## 9. Turning failures into a dataset
 
@@ -421,7 +400,7 @@ Items start as drafts. The recorded output is kept as evidence but is never used
 
 ## 10. Troubleshooting
 
-**`Blocked: Run B ... was served by more than one model revision`.** The provider changed the model behind the same name during the run (try `mock/drifty` to see this). The comparison would be unsound, so rerun, or pin a dated model name. `--force` shows an exploratory comparison anyway.
+**Blocked: served by more than one model revision.** This legacy single-model check protects model-run comparisons. Legitimate multi-model external targets are instead labeled as multiple models; their benchmark/case/grading contracts still must match. Do not force incompatible evidence through a strict gate.
 
 **Comparison refused because variants differ.** The two runs used different benchmark variants, such as `gsm8k@1` and `gsm8k@2`. Compare runs of the same variant.
 

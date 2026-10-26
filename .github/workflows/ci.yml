@@ -12,6 +12,7 @@ jobs:
       fail-fast: false
       matrix:
         database: [sqlite, postgres]
+        extra: [finance, harbor]
     services:
       postgres:
         image: postgres:17
@@ -23,7 +24,8 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v6
-      - run: uv sync --all-extras
+      # Finance (OpenAI >=3.4) and Harbor/LiteLLM (OpenAI <3) need separate environments.
+      - run: uv sync --extra benchmarks --extra eee --extra postgres --extra ${{ matrix.extra }}
       - run: uv run ruff check src tests examples skills
       - name: Tests
         run: uv run pytest -q

@@ -64,6 +64,8 @@ def _run_summary(run: Run) -> dict[str, Any]:
         "id": run.id,
         "benchmark": run.benchmark,
         "model": run.model,
+        "target_kind": run.target_kind or "model",
+        "target": run.target or {},
         "agent": run.agent,
         "status": run.status,
         "resolved_models": run.resolved_models,
@@ -75,11 +77,25 @@ def _run_summary(run: Run) -> dict[str, Any]:
 
 def check_compatibility(a: Run, b: Run, a_keys: set, b_keys: set) -> Compatibility:
     c = Compatibility()
+    kind_a, kind_b = a.target_kind or "model", b.target_kind or "model"
+    if kind_a != kind_b:
+        c.blocking.append("Target kinds differ: external-agent and legacy model runs are not comparable.")
+    if "external_agent" in (kind_a, kind_b):
+        contract_a = (a.manifest or {}).get("evaluation_contract")
+        contract_b = (b.manifest or {}).get("evaluation_contract")
+        if not contract_a or not contract_b or contract_a != contract_b:
+            c.blocking.append("External evaluation benchmark, protocol, cases or grading configuration differ.")
+        if a_keys != b_keys:
+            c.blocking.append("External evaluations require identical original case IDs and attempts.")
     if a.benchmark != b.benchmark or a.variant_key != b.variant_key:
         c.blocking.append(
             f"Different benchmark variants: {a.benchmark} ({a.variant_key}) vs {b.benchmark} ({b.variant_key}). "
             "Scores from different variants are not directly comparable."
         )
+    finance_a = (a.manifest or {}).get("finance_evaluation")
+    finance_b = (b.manifest or {}).get("finance_evaluation")
+    if finance_a != finance_b and (finance_a is not None or finance_b is not None):
+        c.blocking.append("Finance dataset snapshots, scoring protocols or evaluator configurations differ.")
     pkg_a = ((a.manifest or {}).get("versions") or {}).get("inspect_evals")
     pkg_b = ((b.manifest or {}).get("versions") or {}).get("inspect_evals")
     if pkg_a != pkg_b:
@@ -110,7 +126,7 @@ def check_compatibility(a: Run, b: Run, a_keys: set, b_keys: set) -> Compatibili
     if not (a_keys & b_keys):
         c.blocking.append("No samples in common.")
     for label, run in (("A", a), ("B", b)):
-        if len(run.resolved_models or []) > 1:
+        if (run.target_kind or "model") != "external_agent" and len(run.resolved_models or []) > 1:
             c.blocking.append(
                 f"Run {label} ({run.id}) was served by more than one model revision: "
                 f"{', '.join(run.resolved_models)}. Strict comparison is invalid; rerun or pin the model."

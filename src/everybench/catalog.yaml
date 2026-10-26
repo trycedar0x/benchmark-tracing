@@ -4,10 +4,11 @@
 # runs and comparisons; changing the task, its arguments, or the grader means a
 # new version. `task_count` is the full evaluation set size for that variant.
 #
-# Offline entries (offline: true) ship with everybench and run with the
-# `mock/*` models without network access or API keys.
+# Internal entries are development fixtures, hidden from public catalogs.
+# Offline entries ship with everybench and need no model API keys.
 
 - id: toy-arith
+  internal: true
   version: 1
   family: Toy arithmetic
   variant: 40 integer questions, exact numeric match
@@ -21,6 +22,7 @@
   description: Bundled smoke-test benchmark. Pair with mock/* models for offline demos.
 
 - id: toy-tools
+  internal: true
   version: 1
   family: Toy calculator agent
   variant: 30 questions, agent with a calculator tool, exact numeric match
@@ -257,6 +259,7 @@
 # dataset's latest version; each trial's task checksum is recorded and compared.
 
 - id: harbor-smoke
+  internal: true
   version: 1
   family: Harbor smoke tasks
   variant: 2 bundled shell tasks, verified by test scripts

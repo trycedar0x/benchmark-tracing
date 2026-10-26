@@ -1,17 +1,23 @@
 ---
 name: everybench-sdk
-description: Integrate the everybench Python tracing SDK into an agent or application, record model and tool spans, connect OpenInference or OTLP instrumentation, verify trace delivery and completeness, and diagnose agent trajectories. Use for SDK setup, agent observability, missing spans or content, spool and receipt issues, or tracing an agent without running a benchmark.
+description: Integrate EveryBench tracing and user-owned evaluation SDKs. Use module-level evaluate/evaluate_sync with existing callable or HTTP agents, independent trace sources and neutral benchmarks; instrument real model/tool operations through EveryBench or OpenInference/OTLP, verify delivery, and diagnose missing or withheld evidence. Use for SDK setup, agent evaluation, observability, spool/receipt issues and report interpretation.
 ---
 
-# Instrument agents with the Python SDK
+# Use the tracing and evaluation SDK
 
 ## Scope and setup
 
-The public client is `from everybench.sdk import EveryBench`. It records traces; it does **not** currently schedule benchmarks, score tasks, or compare runs. Those operations use the HTTP API/CLI (the separate `everybench` skill). Do not invent `ee.run()`, `ee.evaluate()` or `ee.compare()`.
+Public interfaces are distinct: `from everybench.sdk import EveryBench` supplies tracing/delivery, while module-level `evaluate` / `evaluate_sync` evaluate an existing callable or strict HTTP agent through the shared SDK/CLI engine. There are no instance `ee.run()`, `ee.evaluate()` or `ee.compare()` methods. Read [evaluation contracts and examples](references/evaluation.md) for this path; the legacy HTTP scheduler/helper is not an arbitrary-target execution endpoint.
 
 Use Python 3.12+ and install `everybench` in the consuming application's environment. Discover the application's entry point, framework, existing OpenTelemetry provider, desired task boundaries, server URL, workspace key and content policy before modifying code.
 
-Use an existing server or run `everybench serve` on localhost, without building the web UI. The default client endpoint is `http://127.0.0.1:8321`. The constructor accepts `endpoint=` and `api_key=`; the key falls back to `EVERYBENCH_API_KEY`. **The SDK does not automatically read EVERYBENCH_URL**; pass that environment variable as `endpoint` yourself.
+For exporting traces, reuse a server or run `everybench serve` on localhost; no web build is required. Generic callable evaluation without remote tracing needs no server. The tracing client's endpoint defaults to `http://127.0.0.1:8321`; `endpoint=` / `api_key=` are explicit and the key falls back to `EVERYBENCH_API_KEY`. It does not automatically read `EVERYBENCH_URL`.
+
+## Evaluate an existing agent
+
+Use the [bundled evaluation reference](references/evaluation.md), not internal service modules or a recreated solver. Keep benchmark references/rubrics out of `AgentInput`, configure invocation separately from trace access, and bind actual native execution with `tracer.invocation(case)`. Generic callables can return a string or `AgentResult`; the strict HTTP adapter requires conversation/delta/done NDJSON and clean EOF.
+
+Obtain operator permission before `allow_paid=True` / CLI `--yes`, including evaluator calls. No default remote evaluator or automatic retry is supplied. Finance installs have explicit provider/version requirements and cannot share the current Harbor environment. Require genuine complete visible evidence for trace-aware graders; metadata/withheld/partial evidence is not a passing trace. Preserve null error scores, fractional primary Score and unknown remote costs; inspect component outcomes rather than declaring a whole benchmark passed from one trace.
 
 ## Verify the connection first
 

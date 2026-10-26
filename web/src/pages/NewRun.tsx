@@ -21,8 +21,8 @@ export default function NewRunPage() {
   const catalog = useQuery({ queryKey: ['catalog'], queryFn: api.catalog })
   const models = useQuery({ queryKey: ['models'], queryFn: api.models })
 
-  const [benchmark, setBenchmark] = useState('toy-arith@1')
-  const [modelText, setModelText] = useState('mock/strong\nmock/weak')
+  const [benchmark, setBenchmark] = useState('')
+  const [modelText, setModelText] = useState('')
   const [limit, setLimit] = useState('')
   const [epochs, setEpochs] = useState('1')
   const [content, setContent] = useState('full')
@@ -131,7 +131,11 @@ export default function NewRunPage() {
                     placeholder="openai/gpt-4o-mini"
                   />
                   <FieldDescription>
-                    Inspect model names. Priced models: {models.data?.map((m) => m.model).join(', ')}
+                    Use Inspect provider/model names. Priced models:{' '}
+                    {models.data
+                      ?.filter((m) => !m.mock)
+                      .map((m) => m.model)
+                      .join(', ') || 'none configured'}
                   </FieldDescription>
                 </Field>
                 <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -186,10 +190,13 @@ export default function NewRunPage() {
           </CardContent>
           <CardFooter className="flex flex-col items-start gap-3">
             <div className="flex flex-wrap gap-2">
-              <Button disabled={!modelList.length || createQuote.isPending} onClick={() => createQuote.mutate()}>
+              <Button
+                disabled={!entry || !modelList.length || createQuote.isPending}
+                onClick={() => createQuote.mutate()}
+              >
                 <Receipt /> Get quote
               </Button>
-              {allMock && (
+              {entry && allMock && (
                 <Button variant="outline" disabled={startDirect.isPending} onClick={() => startDirect.mutate()}>
                   <Play /> Run now (mock models)
                 </Button>

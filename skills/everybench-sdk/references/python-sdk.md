@@ -66,6 +66,8 @@ finally:
 
 Health fields are `pending_batches`, `pending_bytes`, `delivered_batches`, `duplicate_batches`, `rejected_batches`, `refused_spans`, `last_error`, and `receipts`. Counters are client-lifetime totals; do not treat a nonempty receipt map alone as successful delivery of the current task.
 
+For evaluation-bound tracing use `invocation(case: AgentInput)` instead of an unrelated new root. It preserves immutable run/sample/attempt and W3C binding around actual model/tool work. The SDK additionally exports module-level `evaluate`, `evaluate_sync`, targets, trace sources and neutral result/benchmark contracts; see [the self-contained evaluation reference](evaluation.md). These are not instance methods on `EveryBench`. For neutral grading, native `record` body keys are `input`, `output`, `tool_arguments`, and `tool_result`; arbitrary tracing-only labels do not automatically become grader evidence.
+
 ## Existing framework/OpenTelemetry instrumentation
 
 Prefer the framework's instrumentation to manually reproducing its internal model/tool calls. Install the matching instrumentor in the application's environment. Pass `tracer_provider=ee.provider` explicitly so those spans go through this client's export and content policy:
@@ -90,3 +92,5 @@ The client applies content policy before writing batches to its durable spool, r
 `closed` verifies delivery against the declared count. It does not detect omitted instrumentation. `open` means no final seal is known; `incomplete` means received count does not match declared completeness. Check counts and actual operation coverage before claiming trace integrity.
 
 Metadata mode is not a universal secrets scrubber: names, ordinary attributes and exception details can still contain sensitive data. Do not copy credentials into instrumentation. Content capture should be a deliberate, authorized choice.
+
+Only already exported/spooled batches have the described disk durability; spans still buffered before export can be lost on a crash, and spool/seal failures can leave evidence incomplete. A seal does not establish complete disclosure: `everybench.evidence.withheld=true` plus canonical body-key names records bounded/partial capture, and trace-aware evaluation fails closed rather than grading input-only evidence as complete.

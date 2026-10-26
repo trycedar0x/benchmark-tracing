@@ -9,6 +9,7 @@ dependencies = [
     "alembic>=1.20.0",
     "cryptography>=50.0.2",
     "fastapi>=0.142.2",
+    "httpx>=0.28.1",
     "inspect-ai>=0.3.277",
     "numpy>=2.5.3",
     "opentelemetry-exporter-otlp-proto-common>=1.45.1",
@@ -30,6 +31,11 @@ everybench = "everybench.cli:app"
 everybench = "everybench._registry"
 
 [project.optional-dependencies]
+finance = [
+    "anthropic>=1.17.0,<2",
+    "openai>=3.4.0,<4",
+    "pypdf>=6.0.0",
+]
 benchmarks = [
     "inspect-evals>=0.23.0",
 ]
@@ -61,6 +67,10 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.uv]
+# Harbor/LiteLLM requires OpenAI <3; current Inspect finance clients require >=3.4.
+conflicts = [[{ extra = "finance" }, { extra = "harbor" }]]
 
 [tool.ruff]
 line-length = 120

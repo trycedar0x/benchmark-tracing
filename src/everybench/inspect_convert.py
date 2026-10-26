@@ -9,11 +9,13 @@ so nothing is silently dropped.
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import datetime, timedelta
 from typing import Any
 
 from inspect_ai.log import EvalSample
-from inspect_ai.scorer import value_to_float
+
+from everybench.scoring import ScoreSpec, normalized_score, numeric_score, select_score
 
 MAX_TEXT = 8000
 SKIPPED_EVENTS = {"span_begin", "span_end", "state", "store", "step", "sample_init", "anchor", "timeline"}
@@ -28,8 +30,6 @@ SPAN_KINDS = {
     "init": "span",
     "subtask": "agent",
 }
-
-_to_float = value_to_float()
 
 
 def trace_id_for(run_id: str, sample_id: str, epoch: int) -> str:
@@ -65,24 +65,23 @@ def _end(start: datetime | None, completed: Any, working_time: float | None) -> 
     return start
 
 
-def primary_score(sample: EvalSample) -> tuple[str | None, Any]:
-    if not sample.scores:
-        return None, None
-    name, score = next(iter(sample.scores.items()))
-    return name, score
+def primary_score(sample: EvalSample, spec: ScoreSpec | None = None) -> tuple[str | None, Any]:
+    return select_score(sample, spec)
 
 
-def outcome_for(sample: EvalSample) -> tuple[str, float | None]:
+def outcome_for(sample: EvalSample, spec: ScoreSpec | None = None) -> tuple[str, float | None]:
+    if spec is None and "everybench_scoring" in sample.metadata:
+        spec = ScoreSpec.model_validate(sample.metadata["everybench_scoring"])
     if sample.error:
         if sample.error.message.startswith("CancelledError"):
             return "cancelled", None
         return "error", None
-    _, score = primary_score(sample)
-    if score is None:
-        return "unscored", None
     try:
-        value = _to_float(score.value)
-    except Exception:
+        _, score = primary_score(sample, spec)
+        if score is None:
+            return "unscored", None
+        value = normalized_score(score.value, spec)
+    except ValueError:
         return "unscored", None
     if value >= 1:
         return "correct", value
@@ -101,14 +100,52 @@ def _target_text(sample: EvalSample) -> str:
     return sample.target if isinstance(sample.target, str) else " | ".join(sample.target)
 
 
-def convert_sample(sample: EvalSample, run_id: str) -> dict[str, Any]:
+def message_evidence(message: Any) -> dict[str, Any]:
+    """Visible execution evidence only: no hidden reasoning blocks, and no UI truncation."""
+    item = {"role": message.role, "text": message.text}
+    if getattr(message, "tool_calls", None):
+        item["tool_calls"] = [
+            {"id": call.id, "function": call.function, "arguments": call.arguments} for call in message.tool_calls
+        ]
+    for key in ("tool_call_id", "function"):
+        if getattr(message, key, None):
+            item[key] = getattr(message, key)
+    if getattr(message, "error", None):
+        item["error"] = message.error.model_dump(mode="json")
+    return item
+
+
+def convert_sample(sample: EvalSample, run_id: str, spec: ScoreSpec | None = None) -> dict[str, Any]:
     """Return {"result": ..., "trace": ..., "spans": [...]} with full content.
 
     Content policy is applied later, at storage time.
     """
     trace_id = trace_id_for(run_id, str(sample.id), sample.epoch)
-    outcome, value = outcome_for(sample)
-    scorer, score = primary_score(sample)
+    if spec is None and "everybench_scoring" in sample.metadata:
+        spec = ScoreSpec.model_validate(sample.metadata["everybench_scoring"])
+    outcome, value = outcome_for(sample, spec)
+    score_error = None
+    try:
+        scorer, score = primary_score(sample, spec)
+        if score is not None:
+            normalized_score(score.value, spec)
+    except ValueError as ex:
+        scorer, score = None, None
+        score_error = f"Invalid primary score: {ex}"
+    all_scores = {name: json.loads(s.model_dump_json()) for name, s in (sample.scores or {}).items()}
+    raw_score = None if score is None else str(score.value)
+    structured = any(isinstance(s.value, dict) for s in (sample.scores or {}).values())
+    if spec is not None or len(all_scores) > 1 or structured:
+        raw_score = json.dumps(
+            {
+                "schema": "everybench.scores.v1",
+                "primary": scorer,
+                "spec": spec.model_dump() if spec else None,
+                "values": {name: item["value"] for name, item in all_scores.items()},
+                "error": score_error,
+            },
+            allow_nan=False,
+        )
     usage_in = sum(u.input_tokens for u in sample.model_usage.values())
     usage_out = sum(u.output_tokens for u in sample.model_usage.values())
 
@@ -117,14 +154,14 @@ def convert_sample(sample: EvalSample, run_id: str) -> dict[str, Any]:
         "epoch": sample.epoch,
         "outcome": outcome,
         "score": value,
-        "score_raw": None if score is None else str(score.value),
+        "score_raw": raw_score,
         "scorer": scorer,
         "answer": None if score is None else _clip(score.answer),
         "explanation": None if score is None else _clip(score.explanation),
         "target": _clip(_target_text(sample)),
         "input": _clip(_input_text(sample)),
         "output": _clip(sample.output.completion if sample.output else None),
-        "error": None if not sample.error else _clip(sample.error.message),
+        "error": _clip(sample.error.message) if sample.error else score_error,
         "input_tokens": usage_in,
         "output_tokens": usage_out,
         "total_time": sample.total_time,
@@ -190,7 +227,7 @@ def convert_sample(sample: EvalSample, run_id: str) -> dict[str, Any]:
         if kind == "model":
             out = ev.output
             resolved = out.model if out else None
-            if resolved and out.choices and not (ev.error or out.error):
+            if resolved and out.choices and not (ev.error or out.error) and not getattr(ev, "role", None):
                 resolved_models.add(resolved)
             usage = out.usage if out else None
             span.update(
@@ -200,6 +237,7 @@ def convert_sample(sample: EvalSample, run_id: str) -> dict[str, Any]:
                 status="error" if ev.error or (out and out.error) else "ok",
                 attributes={
                     "gen_ai.request.model": ev.model,
+                    "model.role": getattr(ev, "role", None),
                     "gen_ai.response.model": resolved,
                     "gen_ai.usage.input_tokens": usage.input_tokens if usage else None,
                     "gen_ai.usage.output_tokens": usage.output_tokens if usage else None,
@@ -254,7 +292,7 @@ def convert_sample(sample: EvalSample, run_id: str) -> dict[str, Any]:
         elif kind == "score":
             sc = ev.score
             try:
-                score_value = _to_float(sc.value)
+                score_value = numeric_score(sc.value)
             except Exception:
                 score_value = None
             # Inspect emits the score event inside the scorer's own span; merge into it.
@@ -321,4 +359,19 @@ def convert_sample(sample: EvalSample, run_id: str) -> dict[str, Any]:
         "span_count": len(spans),
         "attributes": {"resolved_models": sorted(resolved_models)},
     }
-    return {"result": result, "trace": trace, "spans": list(spans.values()), "resolved_models": resolved_models}
+    evidence = {
+        "messages": [message_evidence(m) for m in sample.messages],
+        "input": _input_text(sample),
+        "target": _target_text(sample),
+        "output": sample.output.completion if sample.output else None,
+        "scores": all_scores,
+        "model_usage": {name: usage.model_dump(mode="json") for name, usage in sample.model_usage.items()},
+        "role_usage": {name: usage.model_dump(mode="json") for name, usage in sample.role_usage.items()},
+    }
+    return {
+        "result": result,
+        "trace": trace,
+        "spans": list(spans.values()),
+        "resolved_models": resolved_models,
+        "evidence": evidence,
+    }

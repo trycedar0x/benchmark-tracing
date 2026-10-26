@@ -250,6 +250,32 @@ def test_portable_sdk_script(live_server, tmp_path):
     assert receipt["expected_spans"] == receipt["received_spans"] == 3
 
 
+def test_public_evaluation_exports_and_portable_documented_example(tmp_path):
+    from everybench.sdk import EveryBench, evaluate, evaluate_sync
+
+    assert callable(evaluate) and callable(evaluate_sync)
+    assert not hasattr(EveryBench, "evaluate")  # Module functions, not invented client methods.
+    folder = tmp_path / "installed" / "everybench-sdk"
+    shutil.copytree(SKILLS / "everybench-sdk", folder)
+    reference = (folder / "references/evaluation.md").read_text()
+    code = reference.split("```python\n", 1)[1].split("```", 1)[0]
+    script = tmp_path / "evaluation_example.py"
+    script.write_text(code)
+    env = os.environ.copy()
+    for prefix in ("EVERYBENCH", "EVERYEVAL", "BENCHTRACE"):
+        env.pop(f"{prefix}_DATABASE_URL", None)
+    env["EVERYBENCH_HOME"] = str(tmp_path / "evaluation-home")
+    result = subprocess.run(
+        [sys.executable, str(script)], cwd=tmp_path, env=env, text=True, capture_output=True, timeout=30
+    )
+    assert result.returncode == 0, result.stderr
+    report = json.loads(result.stdout)
+    assert report["schema_version"] == "everybench.agent-evaluation.v1"
+    assert report["status"] == "succeeded" and report["results"][0]["score"] == 1
+    assert report["metrics"]["cost_usd"] is None
+    assert (tmp_path / "evaluation-home/files/evaluations" / report["run_id"] / "report.json").is_file()
+
+
 def test_evaluator_does_not_mutate_comparison():
     result = comparison()
     original = copy.deepcopy(result)

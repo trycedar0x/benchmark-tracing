@@ -66,7 +66,7 @@ class Base(DeclarativeBase):
 
 
 class Run(Base):
-    """One model evaluated on one catalog benchmark."""
+    """One catalog model or explicitly described external agent evaluated on a benchmark."""
 
     __tablename__ = "runs"
 
@@ -80,7 +80,9 @@ class Run(Base):
     status: Mapped[str] = mapped_column(String(20), default="queued", index=True)
     benchmark: Mapped[str] = mapped_column(String(100), index=True)
     variant_key: Mapped[str] = mapped_column(String(64))
-    model: Mapped[str] = mapped_column(String(200))
+    model: Mapped[str | None] = mapped_column(String(200))
+    target_kind: Mapped[str] = mapped_column(String(30), default="model", server_default="model")
+    target: Mapped[dict[str, Any]] = mapped_column(default=dict, server_default="{}")
     # Custom agent import path (module:Class) for agent benchmarks; None runs the catalog's agent.
     agent: Mapped[str | None] = mapped_column(String(300))
     resolved_models: Mapped[list[Any]] = mapped_column(default=list)

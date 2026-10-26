@@ -17,15 +17,16 @@ Read the running server's `/openapi.json` for its installed contract; interactiv
 
 | Request | Response or purpose |
 | --- | --- |
-| `GET /api/catalog` | Array of entries, including `ref`, `variant_key`, dependencies and sandbox requirements |
-| `GET /api/catalog/toy-arith@1` | One entry |
-| `GET /api/models` | Configured price entries, **not** a complete provider model catalog |
-| `POST /api/runs` | Array of created runs in request model order; execution is queued |
-| `GET /api/runs?limit=50&include_quotes=false` | Recent runs; supports benchmark/status filters, limit at most 500 |
-| `GET /api/runs/RUN_ID` | Run detail, manifest, status, errors and outcome counts |
-| `GET /api/runs/RUN_ID/samples?offset=0&limit=100` | `{"total": N, "items": [...]}`; advance offset to total, limit at most 1000 |
-| `POST /api/runs/RUN_ID/cancel` | Request cancellation of this run |
-| `GET /api/compare?a=BASELINE_ID&b=CANDIDATE_ID` | Structured paired comparison; inspect compatibility and results even on HTTP 200 |
+| `GET /api/catalog` | Public entries with ref, variant identity, dependencies and sandbox requirements; internal fixtures excluded |
+| `GET /api/catalog/gsm8k@1` | One public entry |
+| `GET /api/models` | Configured prices, not a complete provider model catalog |
+| `POST /api/runs` | Legacy model/Harbor jobs returned in request model order; no arbitrary external target URL |
+| `GET /api/runs?limit=50&include_quotes=false` | Recent authorized runs with benchmark/status filters; limit at most 500 |
+| `GET /api/runs/RUN_ID` | Run detail, target/model identity, manifest, status, scores/errors and outcome counts |
+| `GET /api/runs/RUN_ID/samples?offset=0&limit=100` | `{"total": N, "items": [...]}`; page to total, limit at most 1000 |
+| `GET /api/runs/RUN_ID/sample-evidence?sample_id=ORIGINAL_ID&epoch=1` | Policy-filtered sample artifact when available; original references remain evaluator-only |
+| `POST /api/runs/RUN_ID/cancel` | Request cooperative cancellation |
+| `GET /api/compare?a=BASELINE_ID&b=CANDIDATE_ID` | Paired comparison; inspect compatibility/results even on HTTP 200 |
 
 Offline create body:
 
@@ -36,6 +37,8 @@ Offline create body:
 Paid models require an approved quote by default. Direct run creation also accepts `budget_usd` (per run) when server policy allows it. Do not disable quote enforcement for automation.
 
 The HTTP run and quote request schemas currently do **not** accept a custom `agent` class. Use CLI `--agent package.module:AgentClass` for Harbor custom agents after approval to execute that code. Do not send guessed API fields.
+
+Public catalog discovery excludes developer fixtures such as `toy-arith`; explicit internal mock POSTs remain available for the bundled development smoke helper. Use a public ref such as `gsm8k@1` for detail discovery. External-agent execution uses the separately authorized SDK/CLI path in [user-agents.md](user-agents.md), not extra fields guessed onto `/api/runs`. Persisted external run details expose `target_kind`, `target`, nullable legacy `model` and primary `score`; legacy `accuracy` remains fully-correct accuracy.
 
 ## Quote, approve, run
 

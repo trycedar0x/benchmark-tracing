@@ -26,9 +26,11 @@ from inspect_ai.log import EvalLog, list_eval_logs, read_eval_log
 from everybench.catalog import get_benchmark
 from everybench.config import settings
 from everybench.db import Run, SampleResult, now, session_scope
+from everybench.finance.runtime import finance_metrics, is_finance
 from everybench.ingest import store_sample
 from everybench.inspect_convert import convert_sample
 from everybench.pricing import price_for
+from everybench.scoring import ScoreSpec
 
 
 class _State:
@@ -37,6 +39,7 @@ class _State:
     budget: float | None = None
     spent: float = 0.0
     budget_stop: bool = False
+    scoring: ScoreSpec | None = None
 
 
 STATE = _State()
@@ -62,7 +65,7 @@ class EveryBenchHooks(Hooks):
             run.samples_total = total * epochs
 
     async def on_sample_end(self, data: SampleEnd) -> None:
-        converted = convert_sample(data.sample, STATE.run_id)
+        converted = convert_sample(data.sample, STATE.run_id, STATE.scoring)
         with session_scope() as session:
             store_sample(session, session.get(Run, STATE.run_id), converted)
 
@@ -106,11 +109,24 @@ def _reconcile(run_id: str, log: EvalLog) -> None:
     """Ingest any samples the live hook missed, then record final metrics."""
     with session_scope() as session:
         run = session.get(Run, run_id)
+        entry = get_benchmark(run.benchmark)
+        scoring = entry.scoring
         stored = {(s.sample_id, s.epoch) for s in session.query(SampleResult).filter_by(run_id=run_id)}
         for sample in log.samples or []:
             if (str(sample.id), sample.epoch) not in stored:
-                store_sample(session, run, convert_sample(sample, run_id))
+                store_sample(session, run, convert_sample(sample, run_id, scoring))
         run.metrics = _metrics(log)
+        if is_finance(entry):
+            run.metrics = {**run.metrics, "finance": finance_metrics(log)}
+            run.cost_usd = None  # No all-inclusive cost claim while search/data fees are unmetered.
+            metadata = log.eval.metadata or {}
+            run.manifest = {
+                **(run.manifest or {}),
+                "finance_evaluation": {
+                    key: metadata.get(key)
+                    for key in ("protocol", "solver_mode", "dataset", "evaluator_models", "jury_mode")
+                },
+            }
         run.log_path = log.location
         run.manifest = {
             **(run.manifest or {}),
@@ -142,6 +158,7 @@ def run_child(run_id: str) -> int:
         custom_agent, agent_path = run.agent, (run.manifest or {}).get("agent_path")
 
     STATE.run_id, STATE.model, STATE.budget = run_id, model, budget
+    STATE.scoring = entry.scoring
     if entry.adapter == "harbor":
         return _run_harbor_child(
             run_id, entry, model, limit, epochs, budget, cfg.logs_dir / run_id, custom_agent, agent_path

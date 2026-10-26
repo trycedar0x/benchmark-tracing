@@ -14,6 +14,7 @@ from sqlalchemy import select
 from everybench.catalog import BenchmarkEntry, get_benchmark
 from everybench.db import Quote, Run, SampleResult, new_id, now, session_scope
 from everybench.execution import execute_run
+from everybench.finance.runtime import evaluator_models, is_finance
 from everybench.pricing import price_for
 from everybench.redact import POLICIES
 
@@ -25,6 +26,14 @@ class PlanError(ValueError):
 
 
 FREE_MODELS = {"oracle", "nop"}  # Harbor reference-solution and no-op agents
+
+
+def billed_models(entry: BenchmarkEntry, models: list[str]) -> list[str]:
+    """Include explicitly configured evaluators in CLI/API payment consent checks."""
+    try:
+        return list(dict.fromkeys([*models, *evaluator_models(entry)]))
+    except ValueError as ex:
+        raise PlanError(str(ex)) from ex
 
 
 def is_paid(model: str) -> bool:
@@ -66,6 +75,10 @@ def validate_plan(
     agent: str | None = None,
     agent_path: str | None = None,
 ) -> None:
+    billed_models(entry, models)  # Reject absent/placeholder evaluator configuration before running.
+    if is_finance(entry) and budget_usd is not None:
+        raise PlanError("Experimental finance runs cannot enforce an all-inclusive budget; "
+                        "judge and search costs require separate accounting. Do not use --budget yet.")
     if agent:
         validate_agent(entry, agent, agent_path or os.getcwd())
     if not models:
@@ -153,6 +166,9 @@ def create_quote_record(
     agent: str | None = None,
 ) -> Quote:
     """Record a quote to be estimated. `compute_quote` fills in the estimate."""
+    if is_finance(entry):
+        raise PlanError("Finance quotes are not supported yet: token-only extrapolation omits search and judge costs. "
+                        "Use an explicit limited development run, not an approved-quote workflow.")
     validate_plan(entry, models, None, "metadata", agent)
     with session_scope() as session:
         quote = Quote(

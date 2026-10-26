@@ -47,6 +47,28 @@ from opentelemetry.sdk.trace import ReadableSpan, SpanProcessor, TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, SpanExporter, SpanExportResult
 
 from everybench.config import env, home_dir
+from everybench.evaluation import (  # noqa: F401 -- SDK public evaluation exports
+    AgentInput,
+    AgentResult,
+    AgentTarget,
+    Benchmark,
+    BenchmarkCase,
+    CallableAgent,
+    CallbackTraceSource,
+    CaseResult,
+    EvaluationReport,
+    FinanceBenchmark,
+    GradeResult,
+    HttpAgent,
+    HTTPTraceSource,
+    StoreTraceSource,
+    TraceEvent,
+    TraceEvidence,
+    TraceSource,
+    evaluate,
+    evaluate_sync,
+    report_path,
+)
 from everybench.otlp import CONTENT_KEY
 from everybench.redact import POLICIES, SENSITIVE_KEYS, redact_text
 
@@ -278,6 +300,36 @@ class EveryBench:
         finally:
             if trace_id is not None:
                 self._seal(trace_id)
+
+    @contextmanager
+    def invocation(self, case: AgentInput, name: str = "agent") -> Iterator[otel_trace.Span]:
+        """Capture an actual agent execution under the evaluator's immutable binding.
+
+        Instrument the user's existing calls inside this scope; it does not create
+        model/tool bodies or change the agent's behavior. Flush/seal failures remain
+        incomplete at the independent trace source.
+        """
+        parent = otel_trace.SpanContext(
+            trace_id=int(case.trace_id, 16),
+            span_id=int(case.parent_span_id, 16),
+            is_remote=True,
+            trace_flags=otel_trace.TraceFlags(otel_trace.TraceFlags.SAMPLED),
+        )
+        context = otel_trace.set_span_in_context(otel_trace.NonRecordingSpan(parent))
+        try:
+            with self.tracer.start_as_current_span(
+                name,
+                context=context,
+                attributes={
+                    "everybench.span.kind": "agent",
+                    "everybench.run_id": case.run_id,
+                    "everybench.sample_id": case.sample_id,
+                    "everybench.attempt": case.attempt,
+                },
+            ) as span:
+                yield span
+        finally:
+            self._seal(case.trace_id)
 
     def _seal(self, trace_id: str) -> None:
         self.processor.force_flush()
