@@ -351,6 +351,8 @@ Span kinds come from `openinference.span.kind` or `gen_ai.operation.name` (`chat
 
 Sealing (`POST /api/traces/<trace-id>/seal` with `{"expected_spans": N}`) is optional. Without it a trace stays `open`, because everybench cannot know whether more spans are coming.
 
+For an existing Node.js/TypeScript app, follow [Send TypeScript traces to EveryBench](typescript-tracing.md): reuse your OTel provider, configure export and privacy, verify delivery offline, and optionally add evaluation correlation and producer completion.
+
 ## 8. Using the HTTP API (CI regression gate)
 
 `everybench serve` runs the API, the web UI and two background workers. Build the UI once first:
