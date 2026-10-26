@@ -1,8 +1,8 @@
 # everybench user guide
 
-This guide walks you through everybench from a first benchmark run to tracing your own agent and gating CI on regressions. Benchmark runs require a provider key and may incur charges; SDK and OTLP tracing can be tried without calling a model. For a reference of every command and option, see the [README](../README.md) and `everybench --help`.
+This guide covers user-owned agent evaluation, tracing and legacy benchmark comparisons. Start with [Evaluate your own agent](evaluating-your-agent.md) for the shared SDK/CLI engine; the numbered model-runner walkthrough remains a separate compatibility workflow. Paid targets/evaluators require explicit authorization. See the [README](../README.md) and installed `everybench COMMAND --help` for exact interfaces.
 
-**Using everybench from a coding agent?** Start with [the agent integration guide](agents.md) and [installable skills](../skills/README.md). The Python SDK is a first-class tracing interface; the HTTP API handles automated benchmark execution and comparison. These workflows do not require a web build or browser.
+**Using a coding agent?** Read [the agent integration guide](agents.md) and [installable skills](../skills/README.md). The SDK supports both tracing and user-owned evaluation through distinct interfaces; the HTTP API schedules legacy runs and inspects/compares persisted results. No browser build is required for these workflows.
 
 Runnable versions of the examples are in [`examples/`](../examples). Building a customer support agent? [Shipping a retail support agent](retail-agent-guide.md) walks through benchmarking and tracing one end to end.
 
@@ -23,11 +23,19 @@ Runnable versions of the examples are in [`examples/`](../examples). Building a 
 
 **Benchmark variant.** A catalog entry such as `gsm8k@1` pins the task, its arguments and its grader. Runs on different variants are never compared silently.
 
-**Run.** One model on one benchmark variant. Each run has an id like `run_0687a9023c2a`.
+**Run.** One external agent or legacy model evaluated on a pinned benchmark/grading contract. A run has an ID such as `run_2fb0e6480df4`. External targets store real identity/version/public configuration separately from any models they use; one agent may legitimately invoke multiple models.
 
 **Sample.** One task inside a run, identified by its dataset sample id. Execution failures are reported separately from wrong answers and kept out of scores.
 
 **Trace.** The tree of steps (spans) behind one sample: model calls, tool calls, sandbox commands and grading. Traces can also come from your own app through the SDK or OpenTelemetry.
+
+## Evaluate an existing agent
+
+Use [the SDK/CLI guide](evaluating-your-agent.md) to load original cases, invoke the existing callable or strict HTTP agent once, fetch its genuine trace independently, grade and persist the report. The deterministic `examples/evaluate_callable.py --yes` is an offline integration fixture with no provider calls; it does not need a running server or Docker.
+
+Named external finance adapters are experimental and use explicit evaluator models and a separate finance environment. Consent covers agent and judge invocations, not a hard cost cap. Keep references/rubrics away from the target and never fabricate trace events from its answer. Missing/withheld traces and agent/grading errors have null scores. External **Score** preserves fractional means; fully-correct accuracy remains separate. Compare compatible original cases and grading contracts, not unrelated agent runs.
+
+The [acceptance record](user-agent-evaluation-acceptance.md) records local validation and the operator-selected PR scope: the sibling financial app's instrumentation and private live artifacts are not included in this repository. Ordinary CI skips cross-repo tests when that separately supplied built app is absent.
 
 ## 1. Install
 
@@ -390,7 +398,7 @@ Items start as drafts. The recorded output is kept as evidence but is never used
 
 ## 10. Troubleshooting
 
-**`Blocked: Run B ... was served by more than one model revision`.** The provider changed the model behind the same name during the run (try `mock/drifty` to see this). The comparison would be unsound, so rerun, or pin a dated model name. `--force` shows an exploratory comparison anyway.
+**Blocked: served by more than one model revision.** This legacy single-model check protects model-run comparisons. Legitimate multi-model external targets are instead labeled as multiple models; their benchmark/case/grading contracts still must match. Do not force incompatible evidence through a strict gate.
 
 **Comparison refused because variants differ.** The two runs used different benchmark variants, such as `gsm8k@1` and `gsm8k@2`. Compare runs of the same variant.
 

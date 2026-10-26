@@ -24,6 +24,24 @@ Start with [the user-agent SDK/CLI guide](docs/evaluating-your-agent.md): callab
 
 [Acceptance evidence](docs/user-agent-evaluation-acceptance.md) records offline integration and one authorized financial-app case, including its failed raw-data matching component. The single-case result is not official leaderboard parity or authorization for another run.
 
+## For coding agents
+
+Start with [the agent integration guide](docs/agents.md). The **Python SDK** exposes tracing/delivery and separate module-level evaluation functions; the **CLI** shares that external-agent engine; the **HTTP API** schedules legacy model/Harbor runs and inspects persisted results. There are no tracing-client instance `ee.evaluate()` or `ee.compare()` methods.
+
+Install the portable [everybench and everybench-sdk skills](skills/README.md) in the consuming project, keeping bundled references/scripts together. They include external-agent SDK/CLI contracts, an offline delivery check and a bounded legacy API regression gate. If changing this repository, read [AGENTS.md](AGENTS.md). The [human walkthrough](docs/guide.md) remains available; use structured reports rather than scraping terminal tables or screenshots.
+
+### Copy and paste into your coding agent
+
+> Help me set up EveryBench in this project for user-owned agent evaluation, tracing and regression checks.
+>
+> Source: https://github.com/trycedar0x/benchmark-tracing. Read docs/agents.md and skills/README.md from that repository or an available checkout. Install the relevant complete skill folders into this project's supported skill directory without overwriting custom skills blindly.
+>
+> Inspect my existing agent, language, framework and tests, then propose the smallest integration. Use module-level SDK evaluate/evaluate_sync or CLI evaluate for the existing callable/HTTP agent, tracing SDK/OTLP for actual operations, and the API/CLI for persisted results/comparison. Do not recreate my agent or invent tracing-client evaluation methods.
+>
+> First verify setup with deterministic local fixtures and the bundled SDK smoke test. Reuse an existing endpoint or isolated local setup. Default to metadata capture, keep credentials out of output, and obtain explicit approval before paid target/evaluator calls, quote samples, Docker downloads or production-data access. A trace alone is not a passed benchmark, and an inconclusive comparison is not improvement.
+>
+> Report changed files, checks, run/trace IDs, component scores and blockers. Never infer deployment or future spending authorization from earlier acceptance evidence.
+
 ## Quick start
 
 Install the benchmark suite with [uv](https://docs.astral.sh/uv/) and configure a provider key. The evaluation below calls a paid model and asks for confirmation:

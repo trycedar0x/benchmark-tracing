@@ -14,13 +14,15 @@ This PR delivers **EveryBench only**, as explicitly selected by the operator. Th
 
 The checked-in cross-repository fixture intentionally skips when the compatible built sibling app is absent, including ordinary CI checkouts. Generic SDK/HTTP/trace/scoring tests remain self-contained. To run those six integration cases, supply the separately instrumented app and build it first; the PR does not install, vendor or deploy it. Private live reports/databases/logs and credentials are not committed.
 
+A clean `git archive` of the PR branch was tested outside this workspace with no sibling financial app: **515 passed, 13 skipped**. The 13 skips are exactly six cross-repository app cases plus the seven optional Docker/Harbor/framework cases. The same source with the compatible local sibling built passed 521 tests / 7 skips. This distinguishes standalone PR coverage from local external-app acceptance.
+
 ## Offline validation and review
 
-- Parent reran the final Python suite: **496 passed, 7 skipped**. The skips require optional Docker/Harbor, OpenAI Agents or LangGraph installations.
-- Financial app: **50 tests passed**, typecheck and build passed.
+- Parent reran the integration implementation: **496 passed, 7 skipped**. After synchronizing upstream agent skills/docs and adding a portable public-SDK example regression, the pre-PR full suite passed **521 tests, 7 skipped**. The skips require optional Docker/Harbor, OpenAI Agents or LangGraph installations.
+- Financial app (separately supplied, not shipped): **50 tests passed**, typecheck and build passed.
 - Browser: **11 passed, 1 skipped**; the existing authentication test requires `AUTH_URL`.
 - Provider loopback tests: **18 passed**, including OpenAI/OpenRouter/Anthropic 429/503 responses with one request per grading call. No real provider calls were used in these tests.
-- Lint, whitespace checks, lock consistency, package build and actual web rebuild passed. Existing bundle-size/future-loader and seven unrelated UI lint warnings remain.
+- Lint including portable skills, whitespace checks, lock consistency, package build and actual web rebuild passed. Existing bundle-size/future-loader and seven unrelated UI lint warnings remain.
 - Fresh reviews initially blocked on privacy/evidence/scoring defects. Accepted findings were fixed with regressions; final tracing review and credential-filter review found no remaining issues. Reviewers inspected sources rather than independently rerunning tests. The final credential review noted that full historical before-images were unavailable for three untracked files; exact recorded mutations and file hashes were supplied instead.
 
 The real local HTTP/OTLP integration tests exercise successful scoring, receiver metadata clamping, missing traces, partial streams, oversized withheld output and secrets in metadata attributes. They assert reference isolation, real model-action/tool linkage, producer acknowledgement before sealing, exclusion of evaluator traffic and no judging when required evidence is withheld.

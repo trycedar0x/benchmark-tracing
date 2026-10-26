@@ -1,20 +1,20 @@
 ---
 name: everybench
-description: Run and compare model or agent benchmarks with everybench, investigate regressions, and gate changes using paired statistics. Use when asked to evaluate an agent or model, select a benchmark, compare baseline and candidate runs, inspect failed samples, or add an evaluation gate to CI. Uses the HTTP API for automation and CLI for local execution; the Python tracing SDK is covered by everybench-sdk.
+description: Run and compare model or agent benchmarks with everybench, investigate regressions, and gate changes using paired statistics. Use when asked to evaluate an agent or model, select a benchmark, compare baseline and candidate runs, inspect failed samples, or add an evaluation gate to CI. Uses the SDK or CLI for user-owned agent evaluation and HTTP API for legacy scheduling and result inspection; tracing and SDK integration are covered by everybench-sdk.
 ---
 
 # Benchmark and regression workflow
 
 ## Establish the task
 
-Identify the benchmark, baseline and candidate (A then B), sample limit, acceptance policy, server URL, and allowed spend. Discover benchmark refs and requirements rather than inventing names:
+First choose the path: existing callable/HTTP agent evaluation via the SDK/`everybench evaluate`, or legacy model/Harbor scheduling via the API/`run`. Read [the user-owned agent contract](references/user-agents.md) for external targets. Then identify benchmark, A/B identities, original cases, acceptance policy, independently authorized trace source and spend. Discover public catalog refs rather than inventing names; developer fixtures remain internal.
 
 ```bash
 uvx everybench catalog --json
-uvx everybench catalog toy-arith@1 --json
+uvx everybench catalog gsm8k@1 --json
 ```
 
-Use `uv run everybench` instead of `uvx everybench` when developing in a clone. An installed `everybench` command also works. The CLI reads a local database; it is **not** a remote client and does not use `EVERYBENCH_URL`. Prefer the HTTP API when IDs and results must be machine-readable.
+Use `uv run everybench` in a clone or the installed CLI. Most CLI commands use a local database, not `EVERYBENCH_URL`; external `evaluate --url` / `--trace-url` explicitly invoke user-owned remote targets while persisting locally. Use `evaluate --json` for external report output and the API for legacy scheduling/remote inspection.
 
 ## Safety before execution
 

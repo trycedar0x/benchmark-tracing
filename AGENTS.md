@@ -5,9 +5,10 @@ everybench is used by coding agents as well as people. Keep the Python SDK, HTTP
 ## Start here
 
 - Using the tool from another project: read [docs/agents.md](docs/agents.md).
+- User-owned callable/HTTP evaluation: [SDK/CLI contracts](docs/evaluating-your-agent.md).
 - Reusable consumer skills: [skills/README.md](skills/README.md). These teach tool use, not repository contribution.
 - Human walkthrough: [docs/guide.md](docs/guide.md).
-- The public Python SDK is `everybench.sdk.EveryBench` (tracing and delivery health). Benchmark scheduling and comparison currently use the HTTP API or CLI; service modules are internal, not a public evaluation SDK.
+- The public SDK exports `EveryBench` for tracing/delivery and module-level `evaluate` / `evaluate_sync` for user-owned agent evaluation. Legacy model/Harbor scheduling and persisted comparisons use the API/CLI; service modules remain internal.
 
 ## Setup and checks
 
@@ -19,7 +20,7 @@ uv run pytest -q
 uv run ruff check src tests examples skills
 ```
 
-The base environment supports mock benchmarks, API and SDK tests without provider keys, Docker or a web build. Optional Harbor/framework tests may skip unless their dependencies are installed. Use `uv sync --all-extras` only when those integrations are needed.
+The base environment supports mock benchmarks, API, generic evaluation and tracing tests without provider keys, Docker or a web build. Install `--extra finance` for supported finance judge clients, or `--extra harbor` for legacy sandbox runners, in separate environments: their current OpenAI SDK constraints conflict, so `--all-extras` is intentionally unsupported. Optional framework/Docker tests may skip. Cross-repository financial-app tests also skip unless the separately supplied compatible sibling app is built; that app is not delivered by this PR.
 
 For frontend changes, also run `npm --prefix web ci && npm --prefix web run build`. Follow the existing shadcn/ui design tokens and components.
 
@@ -34,6 +35,8 @@ For frontend changes, also run `npm --prefix web ci && npm --prefix web run buil
 | Paired comparison and trajectory diff | `src/everybench/compare.py`, `trace_diff.py` |
 | Database and migrations | `src/everybench/db.py`, `src/everybench/migrations/` |
 | Consumer skills and their scripts | `skills/everybench/`, `skills/everybench-sdk/` |
+
+User-owned evaluation contracts, transports, trace sources and the shared engine live in `src/everybench/evaluation/`; `src/everybench/finance/` supplies experimental neutral finance adapters and optional legacy Inspect wrappers. There is no shared public API for arbitrary target URL execution.
 
 ## Working rules
 

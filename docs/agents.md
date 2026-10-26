@@ -1,6 +1,6 @@
 # everybench for coding agents
 
-Use everybench as part of your agent's development loop: instrument the application with the **Python SDK**, run evaluations through the **HTTP API or CLI**, inspect the evidence, then make a targeted change. A browser and interactive prompts are optional, not prerequisites.
+Use EveryBench in an agent's development loop: evaluate the existing agent through the **Python SDK or CLI**, instrument actual execution with the tracing SDK/OTLP, inspect evidence and compare persisted results. The **HTTP API** schedules legacy model/Harbor runs and exposes results. A browser and interactive prompts are optional.
 
 If you are modifying everybench itself, start with the repository's [AGENTS.md](../AGENTS.md). For reusable tool-use instructions in another project, [install the skills](../skills/README.md).
 
@@ -8,12 +8,21 @@ If you are modifying everybench itself, start with the repository's [AGENTS.md](
 
 | Task | Interface | Start here |
 | --- | --- | --- |
-| Add tracing to your own Python agent or application | Public Python SDK, `everybench.sdk.EveryBench` | [SDK workflow](#python-sdk-instrument-your-application), [SDK skill](../skills/everybench-sdk/SKILL.md) |
-| Export traces from another language or existing instrumentation | OTLP/HTTP at `/v1/traces` | [SDK reference](../skills/everybench-sdk/references/python-sdk.md), [OTLP example](../examples/otlp_json.sh) |
-| Schedule evaluations, retain run IDs, poll status, fetch samples and compare results | HTTP API | [Evaluation workflow](#http-api-automate-evaluation), [API reference](../skills/everybench/references/http-api.md) |
-| Discover benchmarks, execute locally, or inspect a local trace | CLI | [CLI contract](#cli-use-structured-output-where-supported) |
+| Evaluate an existing callable or strict HTTP/NDJSON agent | SDK `evaluate` / `evaluate_sync`, or `everybench evaluate` | [User-owned evaluation](evaluating-your-agent.md) |
+| Trace a Python application and verify delivery | Tracing client `everybench.sdk.EveryBench` | [SDK workflow](#python-sdk-instrument-your-application), [SDK skill](../skills/everybench-sdk/SKILL.md) |
+| Export traces from another language | OTLP/HTTP at `/v1/traces`; an independent adapter reads historical traces | [SDK reference](../skills/everybench-sdk/references/python-sdk.md) |
+| Schedule legacy model/Harbor runs or inspect/compare persisted results | HTTP API | [API workflow](#http-api-automate-evaluation), [API reference](../skills/everybench/references/http-api.md) |
+| Discover public variants or inspect local runs | CLI | [Structured CLI contract](#cli-use-structured-output-where-supported) |
 
-The Python SDK currently handles **tracing and delivery health**, not benchmark scheduling, scoring or paired comparison. There is no public `ee.run()`, `ee.evaluate()` or `ee.compare()` method. Internal Python service modules are not a supported evaluation SDK. Conversely, an SDK trace does not automatically become a scored benchmark sample.
+The SDK supports tracing **and user-owned evaluation** through distinct public interfaces: `EveryBench` is the tracing client; `evaluate` / `evaluate_sync` are module functions sharing the CLI engine. There is still no `ee.run()`, instance `ee.evaluate()` or `ee.compare()` method. Standalone traces do not automatically become scored samples; evaluation must bind actual execution to a benchmark case. The server's `/api/runs` scheduler does not accept arbitrary external agent URLs.
+
+## Evaluate your existing agent
+
+Follow [the SDK/CLI guide](evaluating-your-agent.md) for neutral benchmark contracts, callable and strict HTTP adapters, independent trace credentials and report persistence. The offline `examples/evaluate_callable.py --yes` demonstrates the shared engine without a model call or server; it is a deterministic fixture, not a public benchmark. Set a throwaway `EVERYBENCH_HOME` and unset explicit database URLs before smoke checks.
+
+Invocation requires explicit consent (`allow_paid=True` / `--yes`), never a guessed default model or automatic retry. Named FinDeepIndicator/BigFinance adapters require explicitly configured supported evaluator clients; finance and Harbor extras use separate environments. References/rubrics stay with the scorer. Missing/withheld evidence or execution/grading errors have null scores, not incorrect zeroes. External primary Score retains fractional means; unknown total remote cost remains unknown.
+
+Keep the portable legacy API helper below separate: `skills/everybench/scripts/evaluate.py` schedules model-runner baseline/candidate jobs and does not invoke arbitrary HTTP agents. Its `everybench.agent-eval/v1` gate output is distinct from the new SDK report's `schema_version: everybench.agent-evaluation.v1`. The [acceptance record](user-agent-evaluation-acceptance.md) states exactly what was validated, including the separately supplied, non-shipped financial app.
 
 ## Python SDK: instrument your application
 
@@ -111,14 +120,15 @@ The helper is one conservative example policy, not a built-in deployment guarant
 
 | Command | Machine-readable path |
 | --- | --- |
-| `catalog [BENCHMARK] --json` | JSON catalog or entry |
-| `compare A B --json` | JSON comparison, **not** a regression pass/fail exit-code contract |
-| `export RUN --format json --out result.json` | `everybench.results/v1` run and sample export |
-| `run`, `runs`, `show`, `quote`, `trace`, `diff` | Human-oriented output; use HTTP API for structured automation |
+| `evaluate ... --json` | `everybench.agent-evaluation.v1` SDK-compatible report; explicit external target and consent |
+| `catalog [BENCHMARK] --json` | Public catalog/entry; internal fixtures require explicit developer CLI opt-in |
+| `compare A B --json` | JSON comparison, not a regression pass/fail exit-code contract |
+| `export RUN --format json --out result.json` | `everybench.results/v1` run/sample export |
+| `run`, `runs`, `show`, `quote`, `trace`, `diff` | Human-oriented output; use the API for structured inspection |
 
 `--json` is not a universal flag. Check `everybench COMMAND --help` for the installed version. Noninteractive direct CLI calls to paid models fail without `--yes`; that flag represents approval to spend, not permission for an agent to bypass operator authorization.
 
-The CLI reads the local database selected by `EVERYBENCH_HOME`/`EVERYBENCH_DATABASE_URL`; it does not send requests to `EVERYBENCH_URL`. Use the API for remote-server work. If testing in a throwaway local home, ensure explicit database URLs (including legacy variables) are unset too; changing only the home does not override those URLs.
+The CLI reads/persists the local database selected by `EVERYBENCH_HOME`/`EVERYBENCH_DATABASE_URL`; it does not schedule work on `EVERYBENCH_URL`. `evaluate --url` and `--trace-url` explicitly call a remote user-owned agent and trace source while retaining local results. Use the API for remote EveryBench server scheduling/inspection. In throwaway checks, unset explicit database URLs, including legacy variables: changing the home alone does not override them.
 
 ## Inspect a failure and iterate
 

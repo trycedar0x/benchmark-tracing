@@ -1,6 +1,6 @@
 # Experimental finance evaluations
 
-This is a development integration, **not a newly published supported benchmark collection**. The default catalog and UI do not list these tasks. Real-model/search/Docker end-to-end validation and comparison with upstream scoring outputs are still required before publication.
+The experimental finance adapters can now grade a user's existing callable or HTTP agent through the shared SDK/CLI engine. This is not a newly published supported catalog suite or official leaderboard parity: the public catalog stays unchanged. [User-owned evaluation](evaluating-your-agent.md) is the default path; the optional Inspect-created baseline below is compatibility/development material only.
 
 ## What is implemented
 
@@ -9,6 +9,14 @@ This is a development integration, **not a newly published supported benchmark c
 - BigFinanceBench: the **50-item public subset**, not the full 928-item benchmark; actual visible execution trace plus final answer are supplied to rubric judges. Weights are applied by code, not shown to the judges. Final-answer correctness is separate from rubric coverage.
 - Inspect task registration, a fixed research tool surface, explicit evaluator model choices, model-role tagging, full policy-filtered sample evidence, and primary-score normalization.
 - Offline tests using synthetic examples, deterministic models, mocked judges and mocked public-source tools. They do not demonstrate live financial research quality or official leaderboard parity.
+
+## User-owned agent path
+
+Use `everybench.sdk.evaluate` / `evaluate_sync` or `everybench evaluate` with an existing target and independently authorized trace source. No Docker, built-in research solver or new tools are supplied to the target. Generic custom benchmarks/callables need no model client; named finance adapters require explicitly chosen supported extractor/judge clients and `allow_paid=True` / `--yes` after operator approval.
+
+FinDeepIndicator grades final numerical answers and separately reports formula/data components; traces are diagnostic. BigFinance grades weighted rubric coverage using genuine complete visible agent model/tool evidence, with final-answer accuracy separate. Missing, partial or withheld required evidence yields an explicit evaluator state, not a fabricated zero or a final-answer-derived trace. Original questions/IDs/references remain unchanged and evaluator-only.
+
+Install finance independently from Harbor because their current OpenAI SDK constraints conflict. The [usage guide](evaluating-your-agent.md) covers CLI flags, callable/HTTP contracts, provider preflight, independent credentials and content policy. The [acceptance record](user-agent-evaluation-acceptance.md) records the one local live check and its failed data component; the sibling app's instrumentation is deliberately outside this PR.
 
 ## Protocol identity
 
@@ -32,13 +40,13 @@ The BigFinance evaluator uses weighted rubric coverage as its primary score and 
 
 Sources: [FinDeepIndicator data card](https://huggingface.co/datasets/OpenFinArena/FinDeepIndicator/blob/f59dad280fba4e736ccf346eb234265d13fc6737/README.md), [BigFinance data license](https://github.com/Rogo-Technologies/big-finance-benchmark/blob/3b13eecc4cacb4cfa13ac2b7c111d14ce127dd71/data/LICENSE-DATA), [BigFinance reference grader](https://github.com/Rogo-Technologies/big-finance-benchmark/blob/3b13eecc4cacb4cfa13ac2b7c111d14ce127dd71/big_finance_harness/grader.py).
 
-Data is downloaded only when a task is constructed, into `~/.everybench/benchmark-data/<dataset>/<revision>/`. Cache hits are rehashed. Changed or corrupted data fails closed rather than silently fetching a different revision. `source.json` records source, revision, hash, license and attribution. Original records retain evaluation-only/do-not-train flags and canaries; do not use evaluation data or outputs as training data contrary to those restrictions. Third-party financial source terms remain separate.
+Data is loaded only when finance cases/tasks are requested, never at import time. The immutable cache is under `~/.everybench/benchmark-data/` (or configured home); every read verifies SHA-256/count/schema. External `--data-path` accepts the complete pinned file and selects original subsets separately. Source manifests, canaries and `do_not_train` fields are retained in evaluator-only references.
 
 Agent inputs contain the question only. Reference answers, rubrics, formulas and data remain in evaluator targets/metadata and are not injected into model messages or sandbox files. The original Inspect log contains evaluation metadata and is sensitive; do not expose it as an agent-accessible file.
 
-## Local development setup
+## Legacy Inspect baseline (optional)
 
-Install PDF support; Docker is required for the network-disabled Python sandbox:
+These commands build an optional Inspect-hosted baseline, not the user-owned agent evaluation path. Its network-disabled generated-Python tool requires Docker; neither Docker nor that tool is required by external callable/HTTP evaluation. The finance extra installs PDF support and compatible explicit judge clients.
 
 ```bash
 uv sync --extra finance
@@ -74,7 +82,7 @@ The CLI payment-confirmation check includes configured extractor/judge models, e
 
 The fixed tool surface is Tavily search, SEC EDGAR full-text search, public HTTPS document fetching with PDF/text extraction, and Inspect's sandboxed Python. Public-document fetching rejects local/private/reserved addresses, revalidates redirects, and pins connections to the checked address. It forwards no authentication headers or cookies. Generated Python has no host mounts, provider credentials or network access. The experimental Docker image uses a tag; pin and validate its digest before publishing a stable variant.
 
-This is a baseline research agent, not automatic support for a user's external agent framework. An external agent requires an explicit adapter and real execution evidence.
+This optional baseline is not an adapter for the user's existing agent. Its solver/tools remain isolated development material. To evaluate an existing callable/workflow or strict HTTP agent without Inspect solver or Harbor contracts, use the separate SDK/CLI user-owned path documented above; EveryBench must not recreate or expand that agent to improve its benchmark score.
 
 ## Costs and API safeguards
 
@@ -119,4 +127,4 @@ uv run pytest tests/test_scoring.py tests/test_artifacts.py tests/test_finance_d
 uv run ruff check src tests
 ```
 
-Before public release, still verify live search/PDF/EDGAR behavior, Docker isolation and image pinning, real-model and judge runs, upstream scoring consistency, missing-output/error handling, all cost surfaces and safe limits, and repeated-run/statistical comparability. Do not treat ordinary IID sample bootstrap as automatically valid for correlated questions, repeated trials or trading paths. No trading-profitability or broker-order-safety claims are made.
+The external-agent implementation, privacy/scoring fixes, offline gates and one authorized local FinDeepIndicator case are documented in the [acceptance record](user-agent-evaluation-acceptance.md); this is not general benchmark coverage or permission for another paid run. The sibling app is not shipped by this PR, so its integration cases skip in standalone CI. The optional Inspect baseline still lacks full live search/PDF/EDGAR validation and a reviewer-calibrated multi-judge audit. Keep finance prototypes internal until coverage, licensing, costs and adjudication justify a public catalog entry.
