@@ -12,12 +12,14 @@ import secrets
 import tempfile
 import time
 from collections.abc import Awaitable
+from contextvars import ContextVar
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from opentelemetry import context as otel_context
-from sqlalchemy import func, select
+from sqlalchemy import case as sql_case
+from sqlalchemy import func, select, update
 
 from everybench.artifacts import write_sample_artifact
 from everybench.config import settings
@@ -39,6 +41,14 @@ from everybench.evaluation.types import (
 )
 from everybench.redact import POLICIES, SENSITIVE_KEYS, apply_policy, redact_text
 from everybench.scoring import normalized_score
+
+
+class EvaluationPersistenceError(RuntimeError):
+    """Report/evidence export failed, distinct from preflight and grading failures."""
+
+
+_QUEUED_RUN: ContextVar[str | None] = ContextVar("evaluation_queued_run", default=None)
+
 
 _PUBLIC_TARGET_KEYS = {
     "type",
@@ -310,11 +320,27 @@ def _finish(report: EvaluationReport) -> EvaluationReport:
     for key in ("input_tokens", "output_tokens"):
         counts = [result.metadata.get("usage", {}).get(key) for result in report.results]
         report.metrics[key] = sum(counts) if counts and all(v is not None for v in counts) else None
-    _write_report(report)
     with session_scope() as session:
-        run = session.get(Run, report.run_id)
-        run.status, run.finished_at, run.metrics = report.status, now(), report.metrics
-        run.log_path = str(report_path(report.run_id))
+        # Conditional SQL preserves a cancellation or stale-worker failure racing completion.
+        report.status = session.scalar(
+            update(Run)
+            .where(Run.id == report.run_id)
+            .values(
+                status=sql_case(
+                    (Run.status.in_(("failed", "cancelled")), Run.status),
+                    (Run.status == "cancelling", "cancelled"),
+                    else_=report.status,
+                ),
+                finished_at=now(),
+                metrics=report.metrics,
+                log_path=str(report_path(report.run_id)),
+            )
+            .returning(Run.status)
+        )
+        try:
+            _write_report(report)
+        except Exception:
+            raise EvaluationPersistenceError("Evaluation report persistence failed.") from None
     return report
 
 
@@ -379,7 +405,10 @@ async def evaluate(
         cases = [c for c in cases if c.id in selected]
     cases = cases[:limit]
     if isinstance(benchmark, FinanceBenchmark):
-        await benchmark.validate()
+        if queued_id := _QUEUED_RUN.get():
+            await _bounded(benchmark.validate(), grading_timeout, queued_id)
+        else:
+            await benchmark.validate()
     if not hasattr(agent, "invoke") and callable(agent):
         agent = CallableAgent(agent, timeout=timeout)
     target_description = agent.describe()
@@ -395,39 +424,56 @@ async def evaluate(
         "requires_trace": benchmark.requires_trace,
         "cases": [{"id": c.id, "sha256": _digest(c.model_dump())} for c in cases],
     }
-    run_id = new_id("run")
+    run_id = _QUEUED_RUN.get() or new_id("run")
     with session_scope() as session:
-        session.add(
-            Run(
-                id=run_id,
-                workspace_id=workspace_id,
-                benchmark=benchmark.name,
-                variant_key=_digest(contract),
-                model=None,
-                target_kind="external_agent",
-                target=target,
-                status="running",
-                started_at=now(),
-                samples_total=len(cases),
-                limit=limit,
-                epochs=1,
-                content_policy=content_policy,
-                manifest={
-                    "evaluation_contract": contract,
-                    "trace_source": source_description,
-                    "finance_evaluation": description
-                    if isinstance(benchmark.name, str)
-                    and benchmark.name in ("findeepindicator", "bigfinance-public-50")
-                    else None,
-                    "invocation": {
-                        "timeout": timeout,
-                        "trace_timeout": trace_timeout,
-                        "grading_timeout": grading_timeout,
-                        "retries": 0,
-                    },
+        existing = session.get(Run, run_id) if _QUEUED_RUN.get() else None
+        if existing is not None:
+            if existing.workspace_id != workspace_id or existing.benchmark != benchmark.name:
+                raise ValueError("Queued evaluation scope mismatch.")
+            if existing.status == "cancelling":
+                return _finish(
+                    EvaluationReport(
+                        run_id=run_id, benchmark=benchmark.name, target=target, status="cancelled", results=[]
+                    )
+                )
+            if existing.status != "running" or existing.samples_done:
+                raise ValueError("Queued evaluation cannot be replayed.")
+        record = Run(
+            id=run_id,
+            workspace_id=workspace_id,
+            benchmark=benchmark.name,
+            variant_key=_digest(contract),
+            model=None,
+            target_kind="external_agent",
+            target=target,
+            status="running",
+            started_at=now(),
+            samples_total=len(cases),
+            limit=limit,
+            epochs=1,
+            content_policy=content_policy,
+            manifest={
+                "evaluation_contract": contract,
+                "trace_source": source_description,
+                "finance_evaluation": description
+                if isinstance(benchmark.name, str) and benchmark.name in ("findeepindicator", "bigfinance-public-50")
+                else None,
+                "invocation": {
+                    "timeout": timeout,
+                    "trace_timeout": trace_timeout,
+                    "grading_timeout": grading_timeout,
+                    "retries": 0,
                 },
-            )
+            },
         )
+        if existing is None:
+            if _QUEUED_RUN.get():
+                raise ValueError("Queued evaluation missing.")
+            session.add(record)
+        else:
+            for key in ("variant_key", "target", "samples_total", "limit", "epochs", "content_policy"):
+                setattr(existing, key, getattr(record, key))
+            existing.manifest = {**existing.manifest, **record.manifest, "evaluation_phase": "execution"}
     report = EvaluationReport(run_id=run_id, benchmark=benchmark.name, target=target, status="running", results=[])
     for case in cases:
         invocation = AgentInput(
@@ -503,7 +549,7 @@ async def evaluate(
         except Exception:
             report.status = "failed"
             _finish(report)
-            raise RuntimeError("Evaluation evidence persistence failed.") from None
+            raise EvaluationPersistenceError("Evaluation evidence persistence failed.") from None
     report.status = "succeeded" if all(r.status == "scored" for r in report.results) else "failed"
     return _finish(report)
 
@@ -515,3 +561,12 @@ def evaluate_sync(*args: Any, **kwargs: Any) -> EvaluationReport:
     except RuntimeError:
         return asyncio.run(evaluate(*args, **kwargs))
     raise RuntimeError("Use await evaluate(...) inside an event loop.")
+
+
+async def evaluate_queued(run_id: str, *args: Any, **kwargs: Any) -> EvaluationReport:
+    """Internal queue binding; the public SDK evaluate signature stays unchanged."""
+    token = _QUEUED_RUN.set(run_id)
+    try:
+        return await evaluate(*args, **kwargs)
+    finally:
+        _QUEUED_RUN.reset(token)

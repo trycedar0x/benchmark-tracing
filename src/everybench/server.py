@@ -1,7 +1,6 @@
 """HTTP API and web UI.
 
-The API wraps the same service functions the CLI uses. Runs and quotes are
-executed by workers through the job queue, so requests return immediately.
+User-agent evaluations execute through the job queue; historical data remains readable.
 """
 
 from __future__ import annotations
@@ -18,23 +17,14 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
-from everybench.catalog import CatalogError, get_benchmark, load_catalog
 from everybench.compare import compare_runs
 from everybench.config import env
-from everybench.db import Base, Job, Quote, Run, SampleResult, Span, Trace, get_engine, session_scope
+from everybench.db import Base, Job, Run, SampleResult, Span, Trace, get_engine, session_scope
+from everybench.evaluation.benchmarks import catalog_metadata
+from everybench.evaluation.submission import EvaluationSubmission, submit
+from everybench.evaluation.targets import local_request_allowed, profiles
 from everybench.execution import request_cancel
 from everybench.jobs import Worker, enqueue
-from everybench.pricing import load_prices
-from everybench.service import (
-    MOCK_PREFIX,
-    PlanError,
-    approve_quote,
-    billed_models,
-    create_quote_record,
-    create_runs,
-    is_paid,
-    runs_from_quote,
-)
 
 # ---------------------------------------------------------------------------- helpers
 
@@ -85,9 +75,7 @@ def current_workspace(request: Request) -> WorkspaceContext:
     header = request.headers.get("authorization", "")
     bearer = header[7:].strip() if header.lower().startswith("bearer ") else None
     try:
-        principal = authenticate(
-            bearer, request.cookies.get(SESSION_COOKIE), request_header(request, "workspace")
-        )
+        principal = authenticate(bearer, request.cookies.get(SESSION_COOKIE), request_header(request, "workspace"))
     except AuthError as ex:
         raise HTTPException(401, str(ex)) from ex
     if principal.role == "viewer" and request.method not in READ_METHODS:
@@ -104,27 +92,6 @@ def require_owner(ws: WorkspaceContext = Depends(current_workspace)) -> Workspac
 
 
 # ---------------------------------------------------------------------------- request models
-
-
-class QuoteRequest(BaseModel):
-    benchmark: str
-    models: list[str] = Field(min_length=1)
-    limit: int | None = Field(default=None, ge=1)
-    sample_size: int = Field(default=5, ge=1, le=50)
-
-
-class ApproveRequest(BaseModel):
-    cap_usd: float | None = Field(default=None, gt=0)
-
-
-class RunRequest(BaseModel):
-    benchmark: str | None = None
-    models: list[str] = Field(default_factory=list)
-    limit: int | None = Field(default=None, ge=1)
-    epochs: int = Field(default=1, ge=1, le=100)
-    budget_usd: float | None = Field(default=None, gt=0)
-    content_policy: str = "full"
-    quote_id: str | None = None
 
 
 class ImportRequest(BaseModel):
@@ -189,16 +156,6 @@ def create_app(workers: int = 0) -> FastAPI:
             worker.shutdown()
 
     app = FastAPI(title="everybench", version="0.1.0", lifespan=lifespan)
-    require_quote = env("REQUIRE_QUOTE", "1") != "0"
-
-    @app.exception_handler(PlanError)
-    async def plan_error(_: Request, ex: PlanError) -> JSONResponse:
-        return JSONResponse(status_code=400, content={"detail": str(ex)})
-
-    @app.exception_handler(CatalogError)
-    async def catalog_error(_: Request, ex: CatalogError) -> JSONResponse:
-        return JSONResponse(status_code=404, content={"detail": str(ex)})
-
     # -- authentication
 
     @app.post("/api/auth/login")
@@ -326,85 +283,47 @@ def create_app(workers: int = 0) -> FastAPI:
             queued = session.scalar(select(func.count(Job.id)).where(Job.status == "queued"))
         return {"ok": True, "queued_jobs": queued, "embedded_workers": workers}
 
-    # -- catalog and models
+    # -- operator-configured user-agent evaluation
+
+    def evaluation_workspace(request: Request, ws: WorkspaceContext = Depends(current_workspace)):
+        if ws.via == "local" and not local_request_allowed(
+            request.client.host if request.client else None,
+            str(request.url),
+            request.headers.get("origin"),
+            request.headers.get("sec-fetch-site"),
+        ):
+            raise HTTPException(
+                403,
+                "Local evaluation requires loopback and same-origin access; enable authentication for shared servers.",
+            )
+        return ws
 
     @app.get("/api/catalog")
-    def catalog() -> list[dict[str, Any]]:
-        entries = sorted(load_catalog().values(), key=lambda e: e.id)
-        return [e.model_dump() | {"ref": e.ref, "variant_key": e.variant_key} for e in entries]
+    def catalog(ws: WorkspaceContext = Depends(evaluation_workspace)) -> list[dict[str, Any]]:
+        return catalog_metadata()
 
     @app.get("/api/catalog/{ref}")
-    def catalog_entry(ref: str) -> dict[str, Any]:
-        entry = get_benchmark(ref, include_internal=False)
-        return entry.model_dump() | {"ref": entry.ref, "variant_key": entry.variant_key}
+    def catalog_entry(ref: str, ws: WorkspaceContext = Depends(evaluation_workspace)) -> dict[str, Any]:
+        for entry in catalog_metadata():
+            if entry["id"] == ref:
+                return entry
+        raise HTTPException(404, "Evaluation benchmark not found.")
 
-    @app.get("/api/models")
-    def models() -> list[dict[str, Any]]:
-        return [
-            {"model": name, "price": price.model_dump(), "mock": name.startswith(MOCK_PREFIX)}
-            for name, price in sorted(load_prices().items())
-        ]
-
-    # -- quotes
-
-    @app.post("/api/quotes", status_code=201)
-    def create_quote(body: QuoteRequest, ws: WorkspaceContext = Depends(current_workspace)) -> dict[str, Any]:
-        entry = get_benchmark(body.benchmark)
-        quote = create_quote_record(
-            entry, body.models, limit=body.limit, sample_size=body.sample_size, workspace_id=ws.workspace_id
-        )
-        enqueue("quote", quote.id)
-        return row_dict(quote)
-
-    @app.get("/api/quotes/{quote_id}")
-    def get_quote(quote_id: str, ws: WorkspaceContext = Depends(current_workspace)) -> dict[str, Any]:
-        with session_scope() as session:
-            quote = session.get(Quote, quote_id)
-            if quote is None or quote.workspace_id != ws.workspace_id:
-                raise HTTPException(404, "Quote not found")
-            return row_dict(quote)
-
-    @app.post("/api/quotes/{quote_id}/approve")
-    def approve(quote_id: str, body: ApproveRequest, ws: WorkspaceContext = Depends(current_workspace)):
-        with session_scope() as session:
-            quote = session.get(Quote, quote_id)
-            if quote is None or quote.workspace_id != ws.workspace_id:
-                raise HTTPException(404, "Quote not found")
-            if quote.status != "draft":
-                raise HTTPException(409, f"Quote is {quote.status}; only an estimated draft can be approved.")
-        return row_dict(approve_quote(quote_id, body.cap_usd, ws.user))
-
-    # -- runs
+    @app.get("/api/evaluation-targets")
+    def evaluation_targets(ws: WorkspaceContext = Depends(evaluation_workspace)) -> list[dict[str, Any]]:
+        try:
+            return [p.public() for p in profiles(ws.workspace_id)]
+        except ValueError:
+            raise HTTPException(503, "Operator target configuration unavailable.") from None
 
     @app.post("/api/runs", status_code=201)
-    def start_runs(body: RunRequest, ws: WorkspaceContext = Depends(current_workspace)) -> list[dict[str, Any]]:
-        if body.quote_id:
-            with session_scope() as session:
-                quote = session.get(Quote, body.quote_id)
-                if quote is None or quote.workspace_id != ws.workspace_id:
-                    raise HTTPException(404, "Quote not found")
-            runs = runs_from_quote(body.quote_id, content_policy=body.content_policy, epochs=body.epochs)
-        else:
-            if not body.benchmark or not body.models:
-                raise HTTPException(400, "Give a benchmark and at least one model, or a quote_id.")
-            entry = get_benchmark(body.benchmark)
-            paid = [m for m in billed_models(entry, body.models) if is_paid(m)]
-            if paid and require_quote:
-                raise HTTPException(
-                    400, f"Paid models ({', '.join(paid)}) need an approved quote. Create one at /api/quotes."
-                )
-            runs = create_runs(
-                entry,
-                body.models,
-                limit=body.limit,
-                epochs=body.epochs,
-                budget_usd=body.budget_usd,
-                content_policy=body.content_policy,
-                workspace_id=ws.workspace_id,
-            )
-        for run in runs:
-            enqueue("run", run.id)
-        return [run_dict(r) for r in runs]
+    def start_run(body: EvaluationSubmission, ws: WorkspaceContext = Depends(evaluation_workspace)) -> dict[str, Any]:
+        try:
+            return run_dict(submit(body, ws.workspace_id))
+        except LookupError as ex:
+            raise HTTPException(404, str(ex)) from None
+        except ValueError as ex:
+            raise HTTPException(400, str(ex)) from None
 
     @app.get("/api/runs")
     def list_runs(

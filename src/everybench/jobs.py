@@ -12,12 +12,11 @@ import os
 import socket
 import threading
 import time
-import traceback
 from datetime import timedelta
 
-from sqlalchemy import select, text, update
+from sqlalchemy import or_, select, update
 
-from everybench.db import Job, Quote, Run, get_engine, now, session_scope
+from everybench.db import Job, Run, get_engine, now, session_scope
 from everybench.execution import TERMINAL, execute_run
 
 log = logging.getLogger("everybench.worker")
@@ -36,20 +35,17 @@ def enqueue(kind: str, target_id: str) -> Job:
 
 def claim(worker: str) -> Job | None:
     with get_engine().begin() as conn:
+        candidate = select(Job.id).where(Job.status == "queued").order_by(Job.created_at).limit(1).scalar_subquery()
         row = conn.execute(
-            text(
-                "UPDATE jobs SET status = 'running', worker = :worker, attempts = attempts + 1 "
-                "WHERE status = 'queued' AND id = ("
-                "  SELECT id FROM jobs WHERE status = 'queued' ORDER BY created_at LIMIT 1"
-                ") RETURNING id"
-            ),
-            {"worker": worker},
+            update(Job)
+            .where(Job.status == "queued", Job.id == candidate)
+            .values(status="running", worker=worker, attempts=Job.attempts + 1, started_at=now(), heartbeat_at=now())
+            .returning(Job.id)
         ).first()
     if row is None:
         return None
     with session_scope() as session:
         job = session.get(Job, row[0])
-        job.started_at = job.heartbeat_at = now()
         return job
 
 
@@ -60,12 +56,11 @@ def heartbeat(job_id: str) -> None:
 
 def finish(job_id: str, error: str | None = None) -> None:
     with session_scope() as session:
-        job = session.get(Job, job_id)
-        if job is None:
-            return
-        job.status = "failed" if error else "done"
-        job.error = error
-        job.finished_at = now()
+        session.execute(
+            update(Job)
+            .where(Job.id == job_id, Job.status == "running")
+            .values(status="failed" if error else "done", error=error, finished_at=now())
+        )
 
 
 def recover_stale() -> int:
@@ -76,7 +71,12 @@ def recover_stale() -> int:
     cutoff = now() - STALE_AFTER
     recovered = 0
     with session_scope() as session:
-        stale = session.scalars(select(Job).where(Job.status == "running", Job.heartbeat_at < cutoff)).all()
+        stale = session.scalars(
+            select(Job).where(
+                Job.status == "running",
+                or_(Job.heartbeat_at < cutoff, (Job.heartbeat_at.is_(None) & (Job.created_at < cutoff))),
+            )
+        ).all()
         for job in stale:
             job.status = "failed"
             job.error = f"Worker {job.worker} stopped responding."
@@ -94,28 +94,15 @@ def recover_stale() -> int:
                 if imp and imp.status in ("queued", "running"):
                     imp.status = "failed"
                     imp.error = f"Worker {job.worker} stopped responding."
-            elif job.kind == "quote":
-                quote = session.get(Quote, job.target_id)
-                if quote and quote.status == "estimating":
-                    quote.status = "failed"
             recovered += 1
     return recovered
 
 
 def process(job: Job) -> None:
     if job.kind == "run":
-        execute_run(job.target_id)
-    elif job.kind == "quote":
-        from everybench.service import compute_quote
-
-        try:
-            compute_quote(job.target_id)
-        except Exception:
-            with session_scope() as session:
-                quote = session.get(Quote, job.target_id)
-                if quote:
-                    quote.status = "failed"
-            raise
+        run = execute_run(job.target_id)
+        if run.status == "failed":
+            raise RuntimeError("Evaluation failed; see sanitized run status.")
     elif job.kind == "import":
         from everybench.imports import execute_import
 
@@ -160,9 +147,13 @@ class Worker:
             error = None
             try:
                 process(job)
-            except Exception as ex:  # noqa: BLE001 - record any failure on the job
-                error = f"{type(ex).__name__}: {ex}\n{traceback.format_exc(limit=5)}"
-                log.exception("job %s failed", job.id)
+            except Exception:  # noqa: BLE001 - never persist raw provider errors or credentials
+                error = "Job execution failed; partial results kept."
+                if job.kind == "run":
+                    from everybench.execution import fail_run
+
+                    fail_run(job.target_id, error)
+                log.error("job %s failed", job.id)
             finally:
                 beating.set()
             finish(job.id, error)

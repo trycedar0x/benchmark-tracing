@@ -132,3 +132,27 @@ class FinanceBenchmark:
             protocol=evaluation["protocol"],
             metadata=evaluation,
         )
+
+
+def catalog_metadata() -> list[dict[str, Any]]:
+    """Discover adapters without dataset I/O or evaluator construction."""
+    return [
+        {
+            "id": spec.name,
+            "name": "FinDeepIndicator" if spec.name == "findeepindicator" else "BigFinance public 50",
+            "description": "Experimental submitted-response grading."
+            if spec.name == "findeepindicator"
+            else "Experimental public 50-item subset; complete visible agent trace evidence required.",
+            "experimental": True,
+            "official_parity": False,
+            "count": spec.count,
+            "requires_trace": spec.name == "bigfinance-public-50",
+            "requires_extractor": spec.name == "findeepindicator",
+            "judge_requirement": "one" if spec.name == "findeepindicator" else "one-or-more",
+            "license": spec.license,
+            "license_url": spec.license_url,
+            "attribution": spec.attribution,
+            "revision": spec.revision,
+        }
+        for spec in DATASETS.values()
+    ]
