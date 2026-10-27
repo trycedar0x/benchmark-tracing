@@ -1,16 +1,13 @@
+from historical import historical_run
 from sqlalchemy import select
 
-from everybench.catalog import get_benchmark
 from everybench.compare import compare_runs
 from everybench.db import SampleResult, session_scope
-from everybench.execution import execute_run
-from everybench.service import create_runs
 from everybench.trace_diff import diff_traces
 
 
 def _runs():
-    a, b = create_runs(get_benchmark("toy-tools"), ["mock/strong", "mock/flaky"], limit=15)
-    return execute_run(a.id), execute_run(b.id)
+    return historical_run(model="mock/strong", limit=15), historical_run(model="mock/flaky", limit=15)
 
 
 def test_regression_diverges_at_final_model_answer():

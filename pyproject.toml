@@ -1,7 +1,7 @@
 [project]
 name = "everybench"
 version = "0.1.0"
-description = "EveryBench by Eva AI: run any benchmark, trace every task, compare runs with paired statistics."
+description = "Evaluate user-owned agents, trace every task, and compare runs with paired statistics."
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.12"
@@ -34,19 +34,12 @@ everybench = "everybench._registry"
 finance = [
     "anthropic>=1.17.0,<2",
     "openai>=3.4.0,<4",
-    "pypdf>=6.0.0",
-]
-benchmarks = [
-    "inspect-evals>=0.23.0",
 ]
 eee = [
     "every-eval-ever[inspect]>=0.3.0",
 ]
 postgres = [
     "psycopg[binary]>=3.3.6",
-]
-harbor = [
-    "harbor>=0.24",
 ]
 
 [project.urls]
@@ -67,10 +60,6 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-
-[tool.uv]
-# Harbor/LiteLLM requires OpenAI <3; current Inspect finance clients require >=3.4.
-conflicts = [[{ extra = "finance" }, { extra = "harbor" }]]
 
 [tool.ruff]
 line-length = 120

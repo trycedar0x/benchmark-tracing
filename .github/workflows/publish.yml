@@ -34,7 +34,8 @@ jobs:
         run: |
           unzip -l dist/*.whl | grep -q "everybench/static/index.html"
           export EVERYBENCH_HOME=$RUNNER_TEMP/home
-          uvx --isolated --from dist/*.whl everybench run toy-arith -m mock/strong --limit 3 --yes
+          unset EVERYBENCH_DATABASE_URL EVERYEVAL_DATABASE_URL BENCHTRACE_DATABASE_URL
+          uvx --isolated --from dist/*.whl everybench catalog --json
       - uses: actions/upload-artifact@v4
         with:
           name: dist

@@ -12,10 +12,10 @@ ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PROJECT_ENVIRONMENT=/opt/venv PAT
     EVERYBENCH_HOME=/data
 WORKDIR /app
 COPY pyproject.toml uv.lock README.md ./
-RUN uv sync --frozen --no-install-project --no-dev --extra postgres --extra benchmarks
+RUN uv sync --frozen --no-install-project --no-dev --extra postgres --extra finance
 COPY src/ src/
 COPY --from=web /app/static src/everybench/static
-RUN uv sync --frozen --no-dev --extra postgres --extra benchmarks
+RUN uv sync --frozen --no-dev --extra postgres --extra finance
 RUN useradd --create-home --uid 1000 everybench && mkdir -p /data && chown everybench /data
 USER everybench
 VOLUME /data

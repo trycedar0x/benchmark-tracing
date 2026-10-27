@@ -1,6 +1,6 @@
 # Evaluate your own agent
 
-EveryBench supplies cases and grading, not an agent solver. The shared SDK/CLI engine invokes your callable or strict HTTP endpoint once per selected original case. It does not supply prompts, tools, Docker, research solvers or arbitrary-code capabilities to HTTP agents. Legacy `everybench run` Inspect/Harbor experiments remain available separately. The public catalog remains unchanged; the finance adapters below are experimental and are not official leaderboard parity.
+EveryBench supplies cases and grading, not an agent solver. The shared SDK/CLI engine invokes your callable or strict HTTP endpoint once per selected original case. It does not supply prompts, tools, Docker, research solvers or arbitrary-code capabilities to HTTP agents. User-owned-agent evaluation is the sole execution mode. The public catalog lists the two implemented experimental finance adapters; neither claims official leaderboard parity. Historical model/Harbor results remain readable, but their scheduling commands and APIs have been removed.
 
 ## Consent and setup
 
@@ -8,23 +8,17 @@ Install the optional finance clients with `pip install 'everybench[finance]'` in
 
 Every invocation, including a local callable, requires SDK `allow_paid=True` or CLI `--yes`. This consents to agent and evaluator calls, not an all-inclusive dollar cap. Remote costs remain `null`; case/time limits are not billing guarantees. There are no automatic target retries. Supported finance judges disable both Inspect and SDK retries and disable reasoning-summary capability probes. Custom `Benchmark.grade` implementations own their provider retry, cost and consent behavior.
 
-## Optional finance and Harbor environments
+## Finance clients
 
-The finance extra requires `openai>=3.4.0,<4` for current Inspect. Harbor's LiteLLM requires `openai<3`. Install either extra independently; `uv --all-extras` or installing finance and Harbor together is intentionally incompatible. Generic HTTP/callable evaluation has no such conflict. Keep separate virtual environments when using both runners:
+The finance extra installs `openai>=3.4.0,<4` and `anthropic>=1.17.0,<2` for grading. Inspect remains a grading and historical-log import dependency, not a bundled agent runner.
 
 ```sh
-# Finance environment (project checkout):
-UV_PROJECT_ENVIRONMENT=.venv-finance uv sync --extra finance
-# Independent legacy Harbor environment:
-UV_PROJECT_ENVIRONMENT=.venv-harbor uv sync --extra harbor
-# Installed-package alternatives, each in its own activated venv:
+uv sync --extra finance
+# Or in the consuming application's environment:
 pip install 'everybench[finance]'
-pip install 'everybench[harbor]'
 ```
 
-CI validates these extras in separate jobs. OpenAI 3.37.0 and Anthropic 1.17.0 were verified against real loopback HTTP 429/503 responses with one request per grading call, without contacting any provider.
-
-## HTTP: separate target and trace authorization
+## Local SDK/CLI HTTP: separate target and trace authorization
 
 ```sh
 everybench evaluate findeepindicator \
@@ -147,3 +141,15 @@ Cancel the SDK task or use existing `everybench cancel RUN_ID`; cancellation per
 Finance evaluator calls retain unique non-null diagnostic Inspect roles so legacy usage/conversion does not mistake judge traffic for the evaluated model. Experimental finance helpers now honor the supplied model ID, rather than implicit ambient role substitutions. This is an intentional narrow legacy behavior change; scorer function signatures remain unchanged.
 
 For external targets, the primary CLI/API/UI **Score** is the mean of non-null scored cases, matching report `metrics.mean_score` and comparison. Fully-correct accuracy remains separately labeled, and legacy model-run accuracy semantics are unchanged. Fractional scores are not rounded into incorrect zeroes, and legitimate external multi-model execution is labeled as multiple models, not revision drift. Public numeric token limits affect target/grading fingerprints; credential-bearing token fields remain excluded. See the [bounded acceptance record](user-agent-evaluation-acceptance.md) for the completed live case and its component-level limitations; that record is not permission to rerun it.
+
+## Queued HTTP API and web submissions
+
+The network API executes only operator-configured targets. Discover `GET /api/catalog` and `GET /api/evaluation-targets`, then submit `POST /api/runs` with `benchmark`, `target_id`, explicit `judge_models`, FinDeepIndicator `extractor_model`, optional `sample_ids`/`limit`, timeouts and `content_policy` (default `redacted`), and explicit `allow_paid: true`. The response is one queued run object. The web New run form uses this same contract. Costs are not quoted or capped; consent must be separately authorized.
+
+Requests cannot contain agent URLs, Python/filesystem paths, credential names, workspace/role overrides, solver models, epochs or quotes. Operator profiles in `EVERYBENCH_TARGETS_FILE` supply the network capability, independent trace source and workspace-secret references; members cannot register arbitrary destinations. URLs are validated by the strict transports; redirects are rejected. See the [queued backend contract](backend-evaluation-contract.md) for the operator profile format, exact workspace scope, independent secret configuration, metadata fields, request bounds and worker lifecycle.
+
+Authentication uses the existing workspace principal. API keys must be valid and non-revoked; session workspace selection must match stored membership. Viewers may read permitted metadata but cannot submit. Members/owners may use only targets whose configured workspace exactly matches their principal. Unknown and other-workspace targets are indistinguishable. Agent/trace credentials are independent and resolved only for the stored run workspace at execution; no global fallback is permitted.
+
+Auth-off mode is local owner with null workspace, limited to explicitly null-scoped targets and loopback clients/hosts without cross-origin browser requests. `everybench serve` refuses unauthenticated non-loopback binding. Shared or reverse-proxied deployments must enable `EVERYBENCH_AUTH=1` and use TLS; forwarded headers do not establish identity. CLI `evaluate --url` remains an explicit local operator capability, not a network API URL field.
+
+Queued cancellation prevents invocation; running cancellation persists partial results. Inspect the existing run/report before any retry: failed, stale or interrupted paid work must not replay automatically. Configuration changes between submission and execution fail closed.

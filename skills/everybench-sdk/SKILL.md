@@ -7,7 +7,7 @@ description: Integrate EveryBench tracing and user-owned evaluation SDKs. Use mo
 
 ## Scope and setup
 
-Public interfaces are distinct: `from everybench.sdk import EveryBench` supplies tracing/delivery, while module-level `evaluate` / `evaluate_sync` evaluate an existing callable or strict HTTP agent through the shared SDK/CLI engine. There are no instance `ee.run()`, `ee.evaluate()` or `ee.compare()` methods. Read [evaluation contracts and examples](references/evaluation.md) for this path; the legacy HTTP scheduler/helper is not an arbitrary-target execution endpoint.
+Public interfaces are distinct: `from everybench.sdk import EveryBench` supplies tracing/delivery, while module-level `evaluate` / `evaluate_sync` evaluate an existing callable or strict HTTP agent through the shared SDK/CLI engine. There are no instance `ee.run()`, `ee.evaluate()` or `ee.compare()` methods. Read [evaluation contracts and examples](references/evaluation.md) for this path; the queued HTTP API accepts only operator-authorized target IDs.
 
 Use Python 3.12+ and install `everybench` in the consuming application's environment. Discover the application's entry point, framework, existing OpenTelemetry provider, desired task boundaries, server URL, workspace key and content policy before modifying code.
 
@@ -17,7 +17,7 @@ For exporting traces, reuse a server or run `everybench serve` on localhost; no 
 
 Use the [bundled evaluation reference](references/evaluation.md), not internal service modules or a recreated solver. Keep benchmark references/rubrics out of `AgentInput`, configure invocation separately from trace access, and bind actual native execution with `tracer.invocation(case)`. Generic callables can return a string or `AgentResult`; the strict HTTP adapter requires conversation/delta/done NDJSON and clean EOF.
 
-Obtain operator permission before `allow_paid=True` / CLI `--yes`, including evaluator calls. No default remote evaluator or automatic retry is supplied. Finance installs have explicit provider/version requirements and cannot share the current Harbor environment. Require genuine complete visible evidence for trace-aware graders; metadata/withheld/partial evidence is not a passing trace. Preserve null error scores, fractional primary Score and unknown remote costs; inspect component outcomes rather than declaring a whole benchmark passed from one trace.
+Obtain operator permission before `allow_paid=True` / CLI `--yes`, including evaluator calls. No default remote evaluator or automatic retry is supplied. Finance installs have explicit provider/version requirements. Require genuine complete visible evidence for trace-aware graders; metadata/withheld/partial evidence is not a passing trace. Preserve null error scores, fractional primary Score and unknown remote costs; inspect component outcomes rather than declaring a whole benchmark passed from one trace.
 
 ## Verify the connection first
 

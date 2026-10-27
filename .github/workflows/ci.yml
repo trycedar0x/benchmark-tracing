@@ -12,7 +12,6 @@ jobs:
       fail-fast: false
       matrix:
         database: [sqlite, postgres]
-        extra: [finance, harbor]
     services:
       postgres:
         image: postgres:17
@@ -24,25 +23,15 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v6
-      # Finance (OpenAI >=3.4) and Harbor/LiteLLM (OpenAI <3) need separate environments.
-      - run: uv sync --extra benchmarks --extra eee --extra postgres --extra ${{ matrix.extra }}
+      - run: uv sync --frozen --extra eee --extra postgres --extra finance
       - run: uv run ruff check src tests examples skills
       - name: Tests
-        run: uv run pytest -q
+        run: |
+          unset EVERYBENCH_DATABASE_URL EVERYEVAL_DATABASE_URL BENCHTRACE_DATABASE_URL
+          export EVERYBENCH_HOME=$RUNNER_TEMP/everybench-tests
+          uv run pytest -q
         env:
           EVERYBENCH_TEST_POSTGRES: ${{ matrix.database == 'postgres' && 'postgresql+psycopg://postgres:bt@localhost:5432/postgres' || '' }}
-
-  tau3-agents:
-    # The example agents' frameworks need openai>=3, which conflicts with the harbor extra, so their
-    # tests run in an environment with the same pins the agents install in the task container.
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v6
-      - name: Agent tests with the pinned frameworks
-        run: >-
-          uv run --isolated --no-project --with-editable . --with pytest
-          --with-requirements examples/tau3_agents/requirements.txt pytest -q tests/test_tau3_agents.py
 
   web:
     runs-on: ubuntu-latest
@@ -56,10 +45,11 @@ jobs:
           enable-cache: false
       - run: npm --prefix web ci
       - run: npm --prefix web run build
-      - run: uv sync --extra benchmarks
+      - run: uv sync --frozen
       - run: npx --prefix web playwright install --with-deps chromium
       - name: Browser smoke tests
         run: |
+          unset EVERYBENCH_DATABASE_URL EVERYEVAL_DATABASE_URL BENCHTRACE_DATABASE_URL
           export EVERYBENCH_HOME=$RUNNER_TEMP/bt
           uv run everybench serve --port 8321 &
           server=$!

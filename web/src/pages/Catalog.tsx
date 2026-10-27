@@ -8,16 +8,20 @@ import { api } from '../api'
 
 export default function CatalogPage() {
   const catalog = useQuery({ queryKey: ['catalog'], queryFn: api.catalog })
-  const families = new Set(catalog.data?.map((e) => e.family)).size
   return (
     <div className="grid gap-4">
       <div className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight">Catalog</h1>
         <p className="text-sm text-muted-foreground">
-          {catalog.data?.length ?? '…'} variants across {families || '…'} benchmark families. Each variant pins task,
-          arguments and grader; runs on different variants are not compared directly.
+          Experimental finance adapters for user-owned agents, not official leaderboard parity. Counts, grading
+          requirements and pinned dataset licenses are listed below.
         </p>
       </div>
+      {catalog.isPending && (
+        <p role="status" className="text-sm text-muted-foreground">
+          Loading benchmark catalog…
+        </p>
+      )}
       {catalog.error && (
         <Alert variant="destructive">
           <AlertDescription>{errorMessage(catalog.error)}</AlertDescription>
@@ -29,36 +33,43 @@ export default function CatalogPage() {
             <TableHeader>
               <TableRow>
                 <TableHead className="pl-6">Benchmark</TableHead>
-                <TableHead>Variant</TableHead>
+                <TableHead>Description</TableHead>
                 <TableHead className="text-right">Tasks</TableHead>
                 <TableHead>Grader</TableHead>
-                <TableHead>Needs</TableHead>
+                <TableHead>Requirements / status</TableHead>
                 <TableHead className="pr-6">License</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {catalog.data?.map((e) => (
-                <TableRow key={e.ref} className="align-top">
+                <TableRow key={e.id} className="align-top">
                   <TableCell className="pl-6">
-                    <div className="font-mono text-xs font-medium">{e.ref}</div>
-                    <div className="text-xs text-muted-foreground">{e.family}</div>
-                  </TableCell>
-                  <TableCell className="max-w-md whitespace-normal">
-                    {e.variant}
-                    {e.notes && <div className="text-xs text-muted-foreground">{e.notes}</div>}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">{num(e.task_count)}</TableCell>
-                  <TableCell className="max-w-xs whitespace-normal">{e.grader}</TableCell>
-                  <TableCell>
-                    <div className="flex flex-wrap gap-1">
-                      {[...e.requires, ...(e.sandbox ? ['docker'] : []), ...(e.offline ? ['offline'] : [])].map((n) => (
-                        <Badge key={n} variant="outline">
-                          {n}
-                        </Badge>
-                      ))}
+                    <div className="font-medium">{e.name}</div>
+                    <div className="font-mono text-xs text-muted-foreground">
+                      {e.id}
                     </div>
                   </TableCell>
-                  <TableCell className="pr-6 text-xs">{e.license ?? '–'}</TableCell>
+                  <TableCell className="max-w-md whitespace-normal">{e.description}</TableCell>
+                  <TableCell className="text-right tabular-nums">{num(e.count)}</TableCell>
+                  <TableCell className="max-w-xs whitespace-normal">
+                    {e.judge_requirement === 'one' ? 'One explicit judge' : 'One or more explicit judges'}
+                    {e.requires_extractor && '; explicit extractor required'}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap gap-1">
+                      {e.experimental && <Badge variant="outline">Experimental</Badge>}
+                      <Badge variant="outline">
+                        {e.requires_trace ? 'Complete visible trace required' : 'Submitted response'}
+                      </Badge>
+                    </div>
+                  </TableCell>
+                  <TableCell className="pr-6 text-xs whitespace-normal">
+                    <a href={e.license_url} target="_blank" rel="noreferrer" className="underline">
+                      {e.license}
+                    </a>
+                    <div className="mt-1 text-muted-foreground">{e.attribution}</div>
+                    <div className="mt-1 break-all font-mono text-muted-foreground">Revision: {e.revision}</div>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>

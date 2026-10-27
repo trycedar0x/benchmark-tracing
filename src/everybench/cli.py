@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-import threading
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -13,45 +12,23 @@ from typing import Annotated, Any
 
 import typer
 from rich.console import Console
-from rich.live import Live
 from rich.markup import escape
 from rich.table import Table
 from rich.tree import Tree
 from sqlalchemy import select
 
-from everybench.catalog import CatalogError, get_benchmark, load_catalog
 from everybench.compare import compare_runs
 from everybench.config import env
-from everybench.db import Quote, Run, SampleResult, Span, Trace, session_scope
-from everybench.execution import execute_run, request_cancel
-from everybench.service import (
-    PlanError,
-    approve_quote,
-    billed_models,
-    create_quote,
-    create_runs,
-    is_paid,
-    runs_from_quote,
-)
+from everybench.db import Run, SampleResult, Span, Trace, session_scope
 from everybench.trace_diff import content_field
 
 app = typer.Typer(
-    help="Run benchmarks against any model, inspect traces, and compare runs.",
+    help="Evaluate your own agents, inspect traces, and compare runs.",
     no_args_is_help=True,
     pretty_exceptions_show_locals=False,
 )
 console = Console()
 err = Console(stderr=True)
-
-ModelOpt = Annotated[list[str], typer.Option("--model", "-m", help="Model to evaluate; repeat for several.")]
-AgentOpt = Annotated[
-    str | None,
-    typer.Option(
-        "--agent",
-        help="Your own agent for an agent benchmark, as an import path (package.module:AgentClass) "
-        "importable from the current directory. Runs local code.",
-    ),
-]
 
 
 def _who(model: str | None, agent: str | None, target: dict | None = None) -> str:
@@ -88,14 +65,6 @@ def _primary_metric(run: Run) -> tuple[str, float | None]:
     return "Accuracy", _accuracy(run)
 
 
-def _confirm_paid(models: list[str], yes: bool, what: str) -> None:
-    paid = [m for m in models if is_paid(m)]
-    if paid and not yes:
-        if not sys.stdin.isatty():
-            _fail(f"{what} calls paid models ({', '.join(paid)}). Pass --yes to approve.")
-        typer.confirm(f"{what} calls paid models ({', '.join(paid)}). Continue?", abort=True)
-
-
 # ---------------------------------------------------------------------------- catalog
 
 
@@ -103,230 +72,36 @@ def _confirm_paid(models: list[str], yes: bool, what: str) -> None:
 def catalog(
     benchmark: Annotated[str | None, typer.Argument(help="Show details for one benchmark.")] = None,
     as_json: Annotated[bool, typer.Option("--json")] = False,
-    include_internal: Annotated[bool, typer.Option("--include-internal", hidden=True)] = False,
 ) -> None:
-    """List benchmarks in the catalog, or show one."""
+    """List implemented experimental user-agent adapters; never load datasets or providers."""
+    from everybench.evaluation.benchmarks import catalog_metadata
+
+    entries = catalog_metadata()
     if benchmark:
-        try:
-            entry = get_benchmark(benchmark, include_internal=include_internal)
-        except CatalogError as ex:
-            _fail(str(ex))
-        data = entry.model_dump() | {"ref": entry.ref, "variant_key": entry.variant_key}
-        if as_json:
-            print(json.dumps(data))
-            return
-        table = Table(show_header=False, box=None)
-        for key, value in data.items():
-            if value not in (None, [], {}):
-                table.add_row(f"[dim]{key}[/dim]", escape(str(value)))
-        console.print(table)
-        return
-    entries = sorted(load_catalog(include_internal=include_internal).values(), key=lambda e: e.id)
+        entries = [entry for entry in entries if entry["id"] == benchmark]
+        if not entries:
+            _fail(f"Unknown user-agent benchmark {benchmark!r}.")
     if as_json:
-        print(json.dumps([e.model_dump() | {"ref": e.ref} for e in entries]))
+        print(json.dumps(entries[0] if benchmark else entries))
         return
-    table = Table(title="Benchmark catalog")
-    for col in ("Benchmark", "Family", "Variant", "Tasks", "Grader", "Needs"):
-        table.add_column(col, overflow="fold")
-    for e in entries:
-        needs = ", ".join(e.requires + (["docker"] if e.sandbox else []) + (["offline"] if e.offline else []))
-        table.add_row(e.ref, e.family, e.variant, str(e.task_count or "?"), e.grader, needs)
+    table = Table(title="Experimental user-agent benchmarks (not official leaderboard parity)")
+    for column in ("Benchmark", "Cases", "License", "Grading requirements"):
+        table.add_column(column, overflow="fold")
+    for entry in entries:
+        requirements = f"Judges: {entry['judge_requirement']}"
+        if entry["requires_extractor"]:
+            requirements += "; explicit extractor"
+        if entry["requires_trace"]:
+            requirements += "; complete visible trace"
+        table.add_row(entry["id"], str(entry["count"]), entry["license"], requirements)
     console.print(table)
-    families = len({e.family for e in entries})
-    console.print(
-        f"{len(entries)} variants across {families} benchmark families. "
-        "Inspect benchmarks need `uv sync --extra benchmarks`; "
-        "Harbor benchmarks need `uv sync --extra harbor` and Docker."
-    )
-
-
-# ---------------------------------------------------------------------------- quote
-
-quote_app = typer.Typer(help="Estimate cost before running, and approve a budget.", no_args_is_help=True)
-app.add_typer(quote_app, name="quote")
-
-
-def _print_quote(quote: Quote) -> None:
-    agent = f" · agent {quote.agent}" if quote.agent else ""
-    table = Table(title=f"Quote {quote.id} · {quote.benchmark}{agent} · {quote.samples_planned or '?'} samples planned")
-    for col in ("Model", "Sample", "Tokens in (est.)", "Tokens out (est.)", "Cost (est.)", "95% range", "Notes"):
-        table.add_column(col)
-    for model, est in quote.estimate.items():
-        rng = est.get("cost_usd_range")
-        table.add_row(
-            model,
-            f"{est.get('samples_measured', 0)} ok / {est.get('sample_errors', 0)} err",
-            f"{est.get('input_tokens', 0):,.0f}" if "input_tokens" in est else "–",
-            f"{est.get('output_tokens', 0):,.0f}" if "output_tokens" in est else "–",
-            _money(est.get("cost_usd")),
-            f"{_money(rng[0])} – {_money(rng[1])}" if rng else "–",
-            escape(est.get("note", "")),
-        )
-    console.print(table)
-    total = sum((e.get("cost_usd_range") or [0, 0])[1] for e in quote.estimate.values())
-    console.print(
-        f"Upper estimate across models: {_money(total)}. Status: [bold]{quote.status}[/bold]"
-        + (f", cap {_money(quote.cap_usd)}" if quote.cap_usd is not None else "")
-    )
-
-
-@quote_app.command("create")
-def quote_create(
-    benchmark: str,
-    model: ModelOpt,
-    limit: Annotated[int | None, typer.Option(help="Plan to run only the first N samples.")] = None,
-    sample_size: Annotated[int, typer.Option(help="Samples to run per model for the estimate.")] = 5,
-    agent: AgentOpt = None,
-    yes: Annotated[bool, typer.Option("--yes", "-y", help="Approve paid calls for the sample run.")] = False,
-) -> None:
-    """Run a small sample and estimate tokens and cost for the full run."""
-    try:
-        entry = get_benchmark(benchmark)
-    except CatalogError as ex:
-        _fail(str(ex))
-    _confirm_paid(model, yes, f"The quote runs {sample_size} samples per model and")
-    with console.status(f"Running {sample_size} sample(s) per model to estimate cost..."):
-        try:
-            quote = create_quote(entry, model, limit=limit, sample_size=sample_size, agent=agent)
-        except PlanError as ex:
-            _fail(str(ex))
-    _print_quote(quote)
-    console.print(f"Approve with: [bold]everybench quote approve {quote.id} --cap <usd>[/bold]")
-
-
-@quote_app.command("approve")
-def quote_approve(
-    quote_id: str,
-    cap: Annotated[float | None, typer.Option(help="Budget cap in USD across all models.")] = None,
-    by: Annotated[str, typer.Option(help="Who approved.")] = "cli",
-) -> None:
-    """Approve a quote, optionally with a budget cap."""
-    try:
-        quote = approve_quote(quote_id, cap, by)
-    except LookupError as ex:
-        _fail(str(ex))
-    _print_quote(quote)
-    console.print(f"Run it with: [bold]everybench run --quote {quote.id}[/bold]")
-
-
-@quote_app.command("show")
-def quote_show(quote_id: str) -> None:
-    """Show a quote."""
-    with session_scope() as session:
-        quote = session.get(Quote, quote_id)
-        if quote is None:
-            _fail(f"Quote {quote_id} not found")
-    _print_quote(quote)
-
-
-# ---------------------------------------------------------------------------- run
-
-
-def _progress_table(runs: dict[str, Run]) -> Table:
-    table = Table(title="Runs")
-    for col in ("Run", "Model", "Status", "Progress", "Accuracy", "Errors", "Tokens", "Cost"):
-        table.add_column(col)
-    for run in runs.values():
-        total = run.samples_total or 0
-        bar_width = 20
-        filled = int(bar_width * run.samples_done / total) if total else 0
-        progress = f"{'█' * filled}{'░' * (bar_width - filled)} {run.samples_done}/{total or '?'}"
-        color = {"succeeded": "green", "failed": "red", "budget_exceeded": "yellow", "cancelled": "yellow"}.get(
-            run.status, "cyan"
-        )
-        table.add_row(
-            run.id,
-            _who(run.model, run.agent, run.target),
-            f"[{color}]{run.status}[/{color}]",
-            progress,
-            _pct(_accuracy(run)),
-            str(run.n_error),
-            f"{run.input_tokens + run.output_tokens:,}",
-            _money(run.cost_usd),
-        )
-    return table
-
-
-def _execute_with_progress(runs: list[Run], parallel: bool) -> list[Run]:
-    state: dict[str, Run] = {r.id: r for r in runs}
-    lock = threading.Lock()
-
-    def update(run: Run) -> None:
-        with lock:
-            state[run.id] = run
-
-    with Live(_progress_table(state), console=console, refresh_per_second=4) as live:
-
-        def work(run: Run) -> None:
-            update(execute_run(run.id, on_progress=update))
-
-        if parallel:
-            threads = [threading.Thread(target=work, args=(r,), daemon=True) for r in runs]
-            for t in threads:
-                t.start()
-            while any(t.is_alive() for t in threads):
-                with lock:
-                    live.update(_progress_table(state))
-                for t in threads:
-                    t.join(timeout=0.25)
-        else:
-            for run in runs:
-                thread = threading.Thread(target=work, args=(run,), daemon=True)
-                thread.start()
-                while thread.is_alive():
-                    with lock:
-                        live.update(_progress_table(state))
-                    thread.join(timeout=0.25)
-        live.update(_progress_table(state))
-    return list(state.values())
-
-
-@app.command()
-def run(
-    benchmark: Annotated[str | None, typer.Argument(help="Catalog benchmark, e.g. gsm8k or gsm8k@1.")] = None,
-    model: Annotated[list[str] | None, typer.Option("--model", "-m", help="Model; repeat for several.")] = None,
-    limit: Annotated[int | None, typer.Option(help="Run only the first N samples.")] = None,
-    epochs: Annotated[int, typer.Option(help="Repeat each sample N times.")] = 1,
-    budget: Annotated[float | None, typer.Option(help="Budget cap in USD per run.")] = None,
-    quote: Annotated[str | None, typer.Option(help="Run an approved quote.")] = None,
-    agent: AgentOpt = None,
-    content: Annotated[str, typer.Option(help="Content policy: full, redacted, or metadata.")] = "full",
-    sequential: Annotated[bool, typer.Option(help="Run models one after another.")] = False,
-    yes: Annotated[bool, typer.Option("--yes", "-y", help="Approve paid model calls.")] = False,
-) -> None:
-    """Run a benchmark against one or more models, with live progress."""
-    try:
-        if quote:
-            if agent:
-                _fail("A quote fixes its agent; pass --agent to `quote create` instead.")
-            runs = runs_from_quote(quote, content_policy=content, epochs=epochs)
-        else:
-            if not benchmark or not model:
-                _fail("Give a benchmark and at least one --model, or --quote.")
-            entry = get_benchmark(benchmark)
-            _confirm_paid(billed_models(entry, model), yes, "This run (including configured evaluators)")
-            runs = create_runs(
-                entry, model, limit=limit, epochs=epochs, budget_usd=budget, content_policy=content, agent=agent
-            )
-    except (CatalogError, PlanError, LookupError) as ex:
-        _fail(str(ex))
-
-    finished = _execute_with_progress(runs, parallel=not sequential)
-    for r in finished:
-        if r.error and r.status != "succeeded":
-            err.print(f"[yellow]{r.id}[/yellow]: {escape(r.error.strip().splitlines()[0])}")
-    if len(finished) >= 2:
-        a, b = finished[0].id, finished[1].id
-        console.print(f"\nCompare: [bold]everybench compare {a} {b}[/bold]")
-    else:
-        console.print(f"\nDetails: [bold]everybench show {finished[0].id}[/bold]")
-    if any(r.status != "succeeded" for r in finished):
-        raise typer.Exit(1)
 
 
 @app.command()
 def cancel(run_id: str) -> None:
     """Cancel a queued or running run."""
+    from everybench.execution import request_cancel
+
     try:
         run_ = request_cancel(run_id)
     except LookupError as ex:
@@ -340,7 +115,7 @@ def cancel(run_id: str) -> None:
 @app.command("runs")
 def list_runs(
     limit: Annotated[int, typer.Option(help="How many to show.")] = 20,
-    include_quotes: Annotated[bool, typer.Option(help="Include quote sample runs.")] = False,
+    include_quotes: Annotated[bool, typer.Option(help="Include historical quote sample runs.")] = False,
 ) -> None:
     """List recent runs."""
     with session_scope() as session:
@@ -389,7 +164,7 @@ def show(
             ("benchmark", r.benchmark),
             ("variant", r.variant_key),
             ("target", _who(r.model, r.agent, r.target)),
-            ("agent", r.agent or "catalog default"),
+            ("agent", r.agent or "–"),
             ("resolved models", ", ".join(r.resolved_models or []) or "–"),
             ("status", r.status),
             ("samples", f"{r.samples_done}/{r.samples_total or '?'}"),
@@ -907,18 +682,25 @@ def serve(
 
     import uvicorn
 
+    if host not in ("127.0.0.1", "localhost", "::1") and env("AUTH") != "1":
+        _fail(
+            "Non-loopback serving requires EVERYBENCH_AUTH=1. "
+            "Shared/reverse-proxied deployments require authentication."
+        )
+
     from everybench.server import create_app
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
-    if host not in ("127.0.0.1", "localhost", "::1") and env("AUTH") != "1":
-        err.print("[yellow]Warning:[/yellow] binding beyond localhost without authentication enabled.")
     console.print(f"everybench on http://{host}:{port}  (workers: {workers})")
-    uvicorn.run(create_app(workers=workers), host=host, port=port, log_level="warning")
+    # Local authorization must see the TCP peer, not Uvicorn's forwarded-header replacement.
+    uvicorn.run(
+        create_app(workers=workers), host=host, port=port, log_level="warning", proxy_headers=env("AUTH") == "1"
+    )
 
 
 @app.command()
 def worker(concurrency: Annotated[int, typer.Option(help="Jobs to run at once.")] = 2) -> None:
-    """Run queued jobs (runs and quotes) from the database."""
+    """Run queued agent evaluations and imports from the database."""
     import logging
 
     from everybench.jobs import Worker

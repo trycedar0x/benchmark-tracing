@@ -1,15 +1,5 @@
-from everybench.catalog import get_benchmark, load_catalog
 from everybench.pricing import cost_for
 from everybench.redact import apply_policy, redact, redact_text, scrub_attributes
-
-
-def test_catalog_entries_have_unique_refs_and_stable_variant_keys():
-    catalog = load_catalog()
-    assert len(catalog) >= 20
-    entry = get_benchmark("toy-arith")
-    assert entry.ref == "toy-arith@1"
-    assert entry.variant_key == get_benchmark("toy-arith@1").variant_key
-    assert entry.variant_key != get_benchmark("toy-tools").variant_key
 
 
 def test_redaction_catches_common_credentials():
@@ -42,13 +32,3 @@ def test_content_policies():
 def test_mock_prices_and_unknown_models():
     assert cost_for("mock/strong", 1_000_000, 0) == 2.0
     assert cost_for("someprovider/unpriced", 1000, 1000) is None
-
-
-def test_unknown_execution_backend_is_rejected():
-    import pytest
-
-    from everybench.backends import get_backend
-
-    assert get_backend().name == "local"
-    with pytest.raises(ValueError, match="Unknown execution backend"):
-        get_backend("modal")

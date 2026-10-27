@@ -2,16 +2,14 @@ import json
 
 import pytest
 from fastapi.testclient import TestClient
+from historical import historical_run
 from inspect_ai.log import EvalSample
 from inspect_ai.model import ModelOutput
 
 from everybench.artifacts import read_sample_artifact, sample_artifact_path, write_sample_artifact
-from everybench.catalog import get_benchmark
 from everybench.db import Run, session_scope
 from everybench.ingest import store_sample
 from everybench.inspect_convert import convert_sample
-from everybench.server import create_app
-from everybench.service import create_runs
 
 
 @pytest.mark.parametrize("policy", ["metadata", "redacted", "full"])
@@ -41,7 +39,7 @@ def test_evidence_is_idempotently_replaced_and_private():
 
 
 def test_sample_evidence_api_checks_workspace_and_handles_missing():
-    [run] = create_runs(get_benchmark("toy-arith"), ["mock/strong"])
+    run = historical_run()
     sample = EvalSample(
         id="sample/1",
         epoch=1,
@@ -53,6 +51,8 @@ def test_sample_evidence_api_checks_workspace_and_handles_missing():
     )
     with session_scope() as session:
         store_sample(session, session.get(Run, run.id), convert_sample(sample, run.id))
+    from everybench.server import create_app
+
     with TestClient(create_app()) as client:
         path = f"/api/runs/{run.id}/sample-evidence"
         response = client.get(path, params={"sample_id": "sample/1"})

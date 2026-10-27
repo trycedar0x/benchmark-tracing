@@ -1,5 +1,7 @@
 # User-owned agent evaluation: implementation plan
 
+> Historical record: runner/catalog details describe the earlier implementation, not current execution interfaces. Use [current agent evaluation contracts](evaluating-your-agent.md). This record grants no new spend authorization.
+
 Status: implemented and accepted for the bounded local integration. CLI/SDK, neutral evidence/scoring, persistence/comparison and financial-app observability are complete; offline gates and the single authorized live case are recorded in [the acceptance record](user-agent-evaluation-acceptance.md). Finance adapters remain experimental, not official leaderboard parity.
 
 ## Product contract

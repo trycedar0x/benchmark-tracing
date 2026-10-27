@@ -4,7 +4,7 @@ Portable [Agent Skills](https://agentskills.io/) directories for coding agents u
 
 | Skill | Use when | Interface |
 | --- | --- | --- |
-| [everybench](everybench/SKILL.md) | Choose an external-agent or legacy model/Harbor evaluation path, compare results and gate CI | External SDK/CLI; legacy HTTP API and result inspection |
+| [everybench](everybench/SKILL.md) | Evaluate an existing agent, compare results and gate CI | SDK/CLI; authorized-target HTTP queue and result inspection |
 | [everybench-sdk](everybench-sdk/SKILL.md) | Integrate tracing or user-owned SDK evaluation, verify delivery and diagnose evidence | Python SDK, OTLP and inspection API |
 
 Tracing and evaluation remain distinct capabilities. The SDK skill documents `EveryBench` for tracing plus module-level `evaluate` / `evaluate_sync` for existing-agent evaluation; neither skill invents instance methods. Each skill bundles its required reference material so copied installations do not depend on this checkout.

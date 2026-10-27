@@ -110,7 +110,12 @@ export default function App() {
       <main className="mx-auto max-w-7xl px-4 py-6">
         <Routes>
           <Route path="/" element={<RunsPage />} />
-          <Route path="/new" element={<NewRunPage />} />
+          <Route
+            path="/new"
+            element={
+              <NewRunPage key={me.data.workspace?.id ?? 'local'} me={me.data} workspacePending={me.isFetching} />
+            }
+          />
           <Route path="/runs/:runId" element={<RunPage />} />
           <Route path="/traces" element={<TracesPage />} />
           <Route path="/traces/:traceId" element={<TracePage />} />

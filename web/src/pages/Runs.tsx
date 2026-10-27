@@ -62,7 +62,7 @@ export default function RunsPage() {
             </EmptyMedia>
             <EmptyTitle>No runs yet</EmptyTitle>
             <EmptyDescription>
-              Choose a benchmark and your models, then get a quote before starting your first run.
+              Evaluate your own agent: choose a benchmark, an authorized target and evaluator models to start a run.
             </EmptyDescription>
           </EmptyHeader>
           <EmptyContent>
@@ -78,7 +78,7 @@ export default function RunsPage() {
                   <TableHead className="w-8" />
                   <TableHead>Run</TableHead>
                   <TableHead>Benchmark</TableHead>
-                  <TableHead>Model</TableHead>
+                  <TableHead>Agent / Model</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Progress</TableHead>
                   <TableHead className="text-right">{metricColumn}</TableHead>

@@ -1,5 +1,7 @@
 # User-owned agent evaluation: acceptance record
 
+> Historical record: runner/catalog details describe the earlier implementation, not current execution interfaces. Use [current agent evaluation contracts](evaluating-your-agent.md). This record grants no new spend authorization.
+
 Implementation and bounded local acceptance completed on 2026-10-26. This is a functional integration check, not official leaderboard parity or a representative finance benchmark result.
 
 ## Implemented path

@@ -1,66 +1,82 @@
-"""Development fixtures stay runnable without appearing as product benchmarks."""
+"""CLI catalog is static metadata for implemented user-owned finance adapters only."""
 
 import json
 
 import pytest
+from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
-from everybench.catalog import CatalogError, get_benchmark, load_catalog
 from everybench.cli import app
-
-INTERNAL = {"toy-arith@1", "toy-tools@1", "harbor-smoke@1"}
-
-
-def test_public_catalog_excludes_internal_fixtures():
-    public = load_catalog()
-    all_entries = load_catalog(include_internal=True)
-    assert INTERNAL.isdisjoint(public)
-    assert set(all_entries) - set(public) == INTERNAL
-    assert {"gsm8k@1", "terminal-bench@2", "tau3-retail@1"} <= public.keys()
+from everybench.evaluation.benchmarks import catalog_metadata
+from everybench.server import create_app
 
 
-@pytest.mark.parametrize("ref", sorted(INTERNAL))
-def test_internal_fixtures_still_resolve_for_development(ref):
-    entry = get_benchmark(ref)
-    assert entry.internal
-    assert get_benchmark(entry.id).ref == ref
-    with pytest.raises(CatalogError):
-        get_benchmark(ref, include_internal=False)
-    # Visibility must not invalidate comparisons with existing runs.
-    assert entry.variant_key == entry.model_copy(update={"internal": False}).variant_key
+def test_catalog_lists_only_implemented_adapters_without_loading_data(monkeypatch):
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Catalog must not load cases or instantiate graders")
 
-
-def test_cli_catalog_hides_fixtures_unless_explicitly_requested():
-    runner = CliRunner()
-    result = runner.invoke(app, ["catalog", "--json"])
+    monkeypatch.setattr("everybench.finance.datasets.load_dataset", forbidden)
+    monkeypatch.setattr("everybench.evaluation.benchmarks.load_dataset", forbidden)
+    monkeypatch.setattr("everybench.evaluation.benchmarks.FinanceBenchmark.__init__", forbidden)
+    result = CliRunner().invoke(app, ["catalog", "--json"])
     assert result.exit_code == 0, result.output
-    assert INTERNAL.isdisjoint(e["ref"] for e in json.loads(result.output))
-    text_result = runner.invoke(app, ["catalog"])
-    assert text_result.exit_code == 0
-    for ref in INTERNAL:
-        assert ref not in text_result.output
-
-    result = runner.invoke(app, ["catalog", "--json", "--include-internal"])
-    assert result.exit_code == 0, result.output
-    assert INTERNAL <= {e["ref"] for e in json.loads(result.output)}
-
-    for ref in INTERNAL:
-        assert runner.invoke(app, ["catalog", ref]).exit_code == 1
-        detail = runner.invoke(app, ["catalog", ref, "--include-internal", "--json"])
-        assert detail.exit_code == 0, detail.output
-        assert json.loads(detail.output)["ref"] == ref
-
-
-def test_offline_custom_benchmarks_are_not_hidden(tmp_path, monkeypatch):
-    custom = tmp_path / "catalog.yaml"
-    custom.write_text(
-        "- id: local-benchmark\n  version: 1\n  family: Local\n"
-        "  variant: Offline custom benchmark\n  task: local/task\n"
-        "  grader: exact match\n  offline: true\n"
+    metadata = json.loads(result.output)
+    assert metadata == catalog_metadata()
+    with TestClient(create_app(), base_url="http://127.0.0.1", client=("127.0.0.1", 12345)) as client:
+        response = client.get("/api/catalog")
+        assert response.status_code == 200
+        assert response.json() == metadata
+        for entry in metadata:
+            assert client.get(f"/api/catalog/{entry['id']}").json() == entry
+    entries = {e["id"]: e for e in metadata}
+    assert all(
+        set(entry) == {
+            "id", "name", "description", "experimental", "official_parity", "count", "requires_trace",
+            "requires_extractor", "judge_requirement", "license", "license_url", "attribution", "revision",
+        }
+        for entry in entries.values()
     )
-    monkeypatch.setenv("EVERYBENCH_CATALOG", str(custom))
-    load_catalog.cache_clear()
-    try:
-        assert "local-benchmark@1" in load_catalog()
-    finally:
-        load_catalog.cache_clear()
+    assert set(entries) == {"findeepindicator", "bigfinance-public-50"}
+    assert entries["findeepindicator"]["count"] == 3350
+    assert entries["bigfinance-public-50"]["count"] == 50
+    assert entries["bigfinance-public-50"]["requires_trace"]
+    assert not entries["findeepindicator"]["requires_trace"]
+    assert all(e["experimental"] and not e["official_parity"] and e["license_url"] for e in entries.values())
+
+
+def test_catalog_detail_and_unknown():
+    runner = CliRunner()
+    result = runner.invoke(app, ["catalog", "findeepindicator", "--json"])
+    assert result.exit_code == 0
+    assert json.loads(result.output)["id"] == "findeepindicator"
+    assert runner.invoke(app, ["catalog", "toy-arith"]).exit_code == 1
+
+
+def test_help_has_no_legacy_execution_commands():
+    runner = CliRunner()
+    result = runner.invoke(app, ["--help"])
+    assert result.exit_code == 0
+    assert "evaluate" in result.output and "catalog" in result.output
+    for command in ("run", "quote"):
+        rejected = runner.invoke(app, [command, "--help"])
+        assert rejected.exit_code != 0
+        assert "No such command" in rejected.output
+
+
+@pytest.mark.parametrize("authenticated", [False, True])
+def test_serve_preserves_tcp_peer_in_auth_off_mode(monkeypatch, authenticated):
+    monkeypatch.setenv("EVERYBENCH_AUTH", "1" if authenticated else "0")
+    monkeypatch.setenv("FORWARDED_ALLOW_IPS", "*")
+    captured = {}
+    monkeypatch.setattr("everybench.server.create_app", lambda **kwargs: "app")
+    monkeypatch.setattr("uvicorn.run", lambda app, **kwargs: captured.update(kwargs))
+    result = CliRunner().invoke(app, ["serve", "--workers", "0"])
+    assert result.exit_code == 0, result.output
+    assert captured["proxy_headers"] is authenticated
+
+
+@pytest.mark.parametrize("host", ["0.0.0.0", "::", "192.0.2.1", "example.com"])
+def test_serve_rejects_unauthenticated_non_loopback_before_backend_import(host):
+    result = CliRunner().invoke(app, ["serve", "--host", host])
+    assert result.exit_code == 1
+    assert "requires EVERYBENCH_AUTH=1" in result.output

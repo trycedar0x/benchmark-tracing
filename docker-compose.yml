@@ -1,6 +1,6 @@
 # everybench: API + web UI, a worker, and Postgres.
 #   docker compose up --build    then open http://127.0.0.1:8321
-# Provider keys (OPENAI_API_KEY, ANTHROPIC_API_KEY, ...) are read from your shell or a .env file.
+# Store provider/target credentials with `everybench admin set-secret` in the authorized workspace.
 x-everybench: &everybench
   build: .
   image: everybench:local
@@ -11,10 +11,6 @@ x-everybench: &everybench
     #   docker compose run --rm api everybench admin create-user you@example.com --workspace main
     EVERYBENCH_AUTH: ${EVERYBENCH_AUTH:-1}
     EVERYBENCH_SECRET_KEY: ${EVERYBENCH_SECRET_KEY:?set EVERYBENCH_SECRET_KEY to a long random string}
-    OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-    ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-    GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
-    HF_TOKEN: ${HF_TOKEN:-}
   volumes:
     - everybench-data:/data
   depends_on:
@@ -45,11 +41,6 @@ services:
   worker:
     <<: *everybench
     command: ["everybench", "worker", "--concurrency", "2"]
-    # Sandboxed benchmarks (HumanEval, MBPP, Harbor agent benchmarks) start Docker containers.
-    # Uncomment to let the worker use the host's Docker daemon; this grants it root-equivalent access.
-    # volumes:
-    #   - everybench-data:/data
-    #   - /var/run/docker.sock:/var/run/docker.sock
 
 volumes:
   everybench-data:
