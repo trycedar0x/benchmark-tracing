@@ -1,5 +1,7 @@
 # 金融与交易 Agent Benchmark：EveryBench 接入调研
 
+> Historical record: runner/catalog details describe the earlier implementation, not current execution interfaces. Use [current agent evaluation contracts](evaluating-your-agent.md). This record grants no new spend authorization.
+
 调研日期：2026-10-25。
 
 ## 结论

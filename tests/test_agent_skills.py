@@ -18,8 +18,6 @@ import uvicorn
 import yaml
 from fastapi.testclient import TestClient
 
-from everybench.server import create_app
-
 ROOT = Path(__file__).resolve().parents[1]
 SKILLS = ROOT / "skills"
 spec = importlib.util.spec_from_file_location("skill_evaluate", SKILLS / "everybench/scripts/evaluate.py")
@@ -63,57 +61,13 @@ def test_gate_blocks_incomplete_evidence(key, value):
     assert evaluator.assess(result, 0, 2)[0] == "blocked"
 
 
-def test_script_rejects_unapproved_paid_calls(capsys):
-    assert evaluator.main(["--candidate", "openai/not-authorized"]) == 2
-    report = json.loads(capsys.readouterr().out)
-    assert report["decision"] == "error"
-    assert report["run_ids"] == []
-    assert "operator-approved" in report["reason"]
-
-
-@pytest.mark.parametrize(
-    "quote",
-    [
-        {"status": "draft", "models": ["a", "b"]},
-        {"status": "used", "models": ["a", "b"]},
-        {"status": "approved", "models": ["a", "b", "c"]},
-    ],
-)
-def test_invalid_quote_is_not_consumed(monkeypatch, capsys, quote):
-    def api(self, method, path, body=None):
-        assert method == "GET" and path == "/api/quotes/quote_test"
-        return quote
-
-    monkeypatch.setattr(evaluator.Client, "api", api)
-    assert evaluator.main(["--quote", "quote_test"]) == 2
-    report = json.loads(capsys.readouterr().out)
-    assert report["decision"] == "error"
-    assert report["run_ids"] == []
-
-
-def test_approved_quote_uses_fixed_plan(monkeypatch, capsys):
-    def api(self, method, path, body=None):
-        assert method == "GET"
-        return {"status": "approved", "models": ["provider/a", "provider/b"]}
-
-    def evaluate(client, body, max_drop, min_pairs, report):
-        assert body == {"quote_id": "quote_test", "content_policy": "metadata"}
-        report.update(decision="pass", run_ids=["run_a", "run_b"])
-        return 0
-
-    monkeypatch.setattr(evaluator.Client, "api", api)
-    monkeypatch.setattr(evaluator, "evaluate", evaluate)
-    assert evaluator.main(["--quote", "quote_test"]) == 0
-    assert json.loads(capsys.readouterr().out)["decision"] == "pass"
-
-
 def test_timeout_report_preserves_ids(monkeypatch, capsys):
     def evaluate(client, body, max_drop, min_pairs, report):
         report["run_ids"] = ["run_a", "run_b"]
         raise TimeoutError()
 
     monkeypatch.setattr(evaluator, "evaluate", evaluate)
-    assert evaluator.main([]) == 2
+    assert evaluator.main(["--baseline", "run_a", "--candidate", "run_b"]) == 2
     report = json.loads(capsys.readouterr().out)
     assert report["decision"] == "timeout"
     assert report["run_ids"] == ["run_a", "run_b"]
@@ -124,13 +78,12 @@ def test_polling_deadline_preserves_run_ids():
         deadline = 0
 
         def api(self, method, path, body=None):
-            if method == "POST":
-                return [{"id": "run_a"}, {"id": "run_b"}]
+            assert method == "GET"
             return {"id": path.rsplit("/", 1)[1], "status": "running"}
 
     report = {}
     with pytest.raises(TimeoutError):
-        evaluator.evaluate(ExpiredClient(), {}, 0, 2, report)
+        evaluator.evaluate(ExpiredClient(), ["run_a", "run_b"], 0, 2, report)
     assert report["run_ids"] == ["run_a", "run_b"]
 
 
@@ -138,13 +91,12 @@ def test_polling_deadline_preserves_run_ids():
 def test_run_status_and_sample_errors_block_gate(status, outcomes):
     class FinishedClient:
         def api(self, method, path, body=None):
-            if method == "POST":
-                return [{"id": "run_a"}, {"id": "run_b"}]
+            assert method == "GET"
             assert path.startswith("/api/runs/")  # must not compare unusable results
             return {"id": path.rsplit("/", 1)[1], "status": status, "outcomes": outcomes}
 
     report = {}
-    assert evaluator.evaluate(FinishedClient(), {}, 0, 2, report) == 2
+    assert evaluator.evaluate(FinishedClient(), ["run_a", "run_b"], 0, 2, report) == 2
     assert report["decision"] == "blocked"
 
 
@@ -172,13 +124,14 @@ def test_agent_documentation_links():
 
 
 def test_documented_api_routes_exist():
+    from everybench.server import create_app
+
     with TestClient(create_app(workers=0)) as client:
         paths = client.get("/openapi.json").json()["paths"]
     for path in (
         "/api/health",
         "/api/catalog",
-        "/api/quotes",
-        "/api/quotes/{quote_id}/approve",
+        "/api/evaluation-targets",
         "/api/runs",
         "/api/runs/{run_id}",
         "/api/runs/{run_id}/samples",
@@ -196,6 +149,8 @@ def live_server(monkeypatch):
     sock = socket.socket()
     sock.bind(("127.0.0.1", 0))
     port = sock.getsockname()[1]
+    from everybench.server import create_app
+
     server = uvicorn.Server(uvicorn.Config(create_app(workers=2), log_level="warning"))
     thread = threading.Thread(target=server.run, kwargs={"sockets": [sock]}, daemon=True)
     thread.start()
@@ -229,14 +184,17 @@ def run_portable_script(tmp_path, skill, script, *args):
 
 @pytest.mark.parametrize("candidate,code,decision", [("mock/strong", 0, "pass"), ("mock/weak", 1, "regression")])
 def test_portable_evaluation_script(live_server, tmp_path, candidate, code, decision):
+    from historical import historical_run
+
+    a, b = historical_run(limit=40), historical_run(model=candidate, limit=40)
     actual, report = run_portable_script(
-        tmp_path, "everybench", "evaluate.py", "--candidate", candidate, "--limit", "20", "--timeout", "60"
+        tmp_path, "everybench", "evaluate.py", "--baseline", a.id, "--candidate", b.id, "--timeout", "60"
     )
     assert actual == code, report
     assert report["schema"] == "everybench.agent-eval/v1"
     assert report["decision"] == decision
     assert len(report["run_ids"]) == 2
-    assert report["comparison"]["n_scored_pairs"] == 20
+    assert report["comparison"]["n_scored_pairs"] == 40
 
 
 def test_portable_sdk_script(live_server, tmp_path):

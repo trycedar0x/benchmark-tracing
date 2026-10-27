@@ -5,8 +5,8 @@ from dataclasses import replace
 
 import pytest
 
+from everybench.evaluation.benchmarks import FinanceBenchmark
 from everybench.finance.datasets import DATASETS, DatasetError, load_dataset, parse_dataset
-from everybench.finance.tasks import samples_for
 
 BIG_ROW = {
     "id": "example-1",
@@ -36,19 +36,20 @@ def test_jsonl_schema_and_evaluation_restrictions_are_preserved():
     body = json.dumps(BIG_ROW).encode()
     rows = parse_dataset(body, spec_for(body))
     assert rows[0]["do_not_train"] and rows[0]["benchmark_canary"] == "protected canary"
-    sample = samples_for("bigfinance-public-50", rows)[0]
-    assert sample.input == BIG_ROW["query"]
-    assert "protected" not in sample.input
-    assert sample.target == BIG_ROW["reference_answer"]
-    assert sample.metadata["finance_reference"]["rubric"] == BIG_ROW["rubric"]
-    assert not sample.files
+    assert rows[0]["reference_answer"] == BIG_ROW["reference_answer"]
+    assert rows[0]["rubric"] == BIG_ROW["rubric"]
 
 
-def test_indicator_reference_fields_never_appear_in_agent_input():
-    sample = samples_for("findeepindicator", [INDICATOR_ROW])[0]
-    assert sample.input == INDICATOR_ROW["question"]
-    assert "12.5" not in sample.input and "profit/revenue" not in sample.input
-    assert sample.metadata["finance_reference"]["data"] == INDICATOR_ROW["data"]
+@pytest.mark.parametrize("name,row", [("bigfinance-public-50", BIG_ROW), ("findeepindicator", INDICATOR_ROW)])
+def test_reference_fields_never_appear_in_agent_input(monkeypatch, name, row):
+    monkeypatch.setattr("everybench.evaluation.benchmarks.load_dataset", lambda name: [row])
+    adapter = FinanceBenchmark(
+        name, judge_models=["mock/perfect"], extractor_model="mock/perfect" if name == "findeepindicator" else None
+    )
+    [case] = adapter.cases()
+    assert case.input == row["query" if name == "bigfinance-public-50" else "question"]
+    assert "protected" not in case.input and "profit/revenue" not in case.input
+    assert case.reference == row
 
 
 @pytest.mark.parametrize("change", ["hash", "count", "duplicate", "rubric", "missing", "id"])

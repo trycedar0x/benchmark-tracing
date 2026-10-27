@@ -47,18 +47,20 @@ def test_requests_without_credentials_are_rejected(auth_env):
 
 
 def test_workspaces_are_isolated(auth_env):
+    from historical import historical_run
+
+    with session_scope() as session:
+        a = ensure_workspace(session, "team-a").id
+    run = historical_run(workspace_id=a, limit=3)
     alice, bob = logged_in("alice@example.com"), logged_in("bob@example.com")
     try:
-        [run] = alice.post("/api/runs", json={"benchmark": "toy-arith", "models": ["mock/strong"], "limit": 3}).json()
-        done = wait_done(alice, run["id"])
-        assert done["status"] == "succeeded"
-        trace_id = alice.get(f"/api/runs/{run['id']}/samples").json()["items"][0]["trace_id"]
+        assert alice.get(f"/api/runs/{run.id}").status_code == 200
+        trace_id = alice.get(f"/api/runs/{run.id}/samples").json()["items"][0]["trace_id"]
         assert alice.get(f"/api/traces/{trace_id}").status_code == 200
-
         assert bob.get("/api/runs").json() == []
-        assert bob.get(f"/api/runs/{run['id']}").status_code == 404
+        assert bob.get(f"/api/runs/{run.id}").status_code == 404
         assert bob.get(f"/api/traces/{trace_id}").status_code == 404
-        assert bob.post(f"/api/runs/{run['id']}/cancel").status_code == 404
+        assert bob.post(f"/api/runs/{run.id}/cancel").status_code == 404
         assert alice.get("/api/auth/me").json()["workspace"]["name"] == "team-a"
     finally:
         alice.__exit__(None, None, None)
@@ -69,7 +71,7 @@ def test_viewer_is_read_only(auth_env):
     viewer = logged_in("val@example.com")
     try:
         assert viewer.get("/api/runs").status_code == 200
-        resp = viewer.post("/api/runs", json={"benchmark": "toy-arith", "models": ["mock/strong"]})
+        resp = viewer.post("/api/runs", json={})
         assert resp.status_code == 403
     finally:
         viewer.__exit__(None, None, None)
@@ -136,17 +138,3 @@ def test_secrets_are_encrypted_and_scoped(auth_env):
         assert listed[0]["name"] == "OPENAI_API_KEY" and "value" not in listed[0]
     finally:
         alice.__exit__(None, None, None)
-
-
-def test_run_process_receives_workspace_secrets(auth_env):
-    from everybench.catalog import get_benchmark
-    from everybench.execution import _child_env
-    from everybench.service import create_runs
-
-    with session_scope() as session:
-        a = ensure_workspace(session, "team-a").id
-    set_secret(a, "OPENAI_API_KEY", "sk-team-a-secret")
-    [run_a] = create_runs(get_benchmark("toy-arith"), ["mock/strong"], workspace_id=a)
-    [run_local] = create_runs(get_benchmark("toy-arith"), ["mock/strong"])
-    assert _child_env(run_a.id)["OPENAI_API_KEY"] == "sk-team-a-secret"
-    assert _child_env(run_local.id).get("OPENAI_API_KEY") != "sk-team-a-secret"

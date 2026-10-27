@@ -12,7 +12,7 @@ def everybench_home(tmp_path, monkeypatch):
     (postgresql+psycopg://user:pass@host/postgres) to run each test on a fresh Postgres database.
     """
     monkeypatch.setenv("EVERYBENCH_HOME", str(tmp_path / "home"))
-    for prefix in ("EVERYBENCH_", "BENCHTRACE_"):  # BENCHTRACE_*: old names, still read as a fallback
+    for prefix in ("EVERYBENCH_", "EVERYEVAL_", "BENCHTRACE_"):  # BENCHTRACE_*: old names, still read as a fallback
         monkeypatch.delenv(f"{prefix}DATABASE_URL", raising=False)
         monkeypatch.delenv(f"{prefix}AUTH", raising=False)
     admin_url = os.environ.get("EVERYBENCH_TEST_POSTGRES")

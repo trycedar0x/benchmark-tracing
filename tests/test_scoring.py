@@ -4,7 +4,6 @@ import pytest
 from inspect_ai.log import EvalSample
 from inspect_ai.model import ModelOutput
 
-from everybench.catalog import get_benchmark
 from everybench.inspect_convert import convert_sample, outcome_for
 from everybench.scoring import ScoreSpec, normalized_score
 
@@ -76,9 +75,3 @@ def test_full_output_survives_separately_from_ui_preview():
     converted = convert_sample(sample(1, output=text), "run")
     assert "truncated" in converted["result"]["output"]
     assert converted["evidence"]["output"] == text
-
-
-def test_score_spec_changes_variant_identity_but_absent_spec_keeps_old_identity():
-    entry = get_benchmark("toy-arith")
-    assert entry.scoring is None
-    assert entry.variant_key != entry.model_copy(update={"scoring": ScoreSpec(maximum=100)}).variant_key

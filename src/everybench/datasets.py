@@ -15,7 +15,6 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from everybench.catalog import CatalogError, get_benchmark
 from everybench.db import Dataset, DatasetItem, Run, SampleResult, Span, Trace, now, session_scope
 from everybench.redact import redact
 
@@ -76,14 +75,19 @@ def draft_from_trace(session: Session, trace_id: str) -> dict[str, Any]:
     if sample is not None:
         run = session.get(Run, sample.run_id)
         input_, output, score = sample.input, sample.output or sample.answer, sample.score
-        rights = "unknown"
-        try:
-            entry = get_benchmark(run.benchmark)
-            rights = "licensed" if entry.license else "unknown"
-            provenance |= {"benchmark": entry.ref, "license": entry.license, "target": sample.target}
-        except CatalogError:
-            provenance |= {"benchmark": run.benchmark}
-        provenance |= {"model": run.model, "outcome": sample.outcome}
+        # A retired catalog is not evidence of rights. Use recorded provenance only.
+        manifest = run.manifest or {}
+        benchmark = manifest.get("benchmark") or {}
+        license_ = benchmark.get("license")
+        rights = (trace.attributes or {}).get("usage_rights") or ("licensed" if license_ else "unknown")
+        provenance |= {
+            "benchmark": run.benchmark,
+            "model": run.model,
+            "outcome": sample.outcome,
+            "target": sample.target,
+        }
+        if license_:
+            provenance["license"] = license_
     else:
         model_spans = [s for s in spans if s.kind == "model"]
         input_ = _first(root.content if root else None, INPUT_KEYS)

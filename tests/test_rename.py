@@ -13,10 +13,10 @@ from everybench.server import create_app
 
 
 def test_old_environment_variables_are_a_fallback(monkeypatch):
-    monkeypatch.setenv("BENCHTRACE_REQUIRE_QUOTE", "0")
-    assert env("REQUIRE_QUOTE") == "0"
-    monkeypatch.setenv("EVERYBENCH_REQUIRE_QUOTE", "1")
-    assert env("REQUIRE_QUOTE") == "1"
+    monkeypatch.setenv("BENCHTRACE_INGEST_CONTENT", "metadata")
+    assert env("INGEST_CONTENT") == "metadata"
+    monkeypatch.setenv("EVERYBENCH_INGEST_CONTENT", "1")
+    assert env("INGEST_CONTENT") == "1"
 
 
 def test_old_data_folder_is_used_until_the_new_one_exists(tmp_path, monkeypatch):

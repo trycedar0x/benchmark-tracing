@@ -1,4 +1,4 @@
-"""Bounded, JSON-only regression gate for the everybench HTTP API (standard library only)."""
+"""Read-only, bounded JSON regression gate over two existing runs (standard library only)."""
 
 from __future__ import annotations
 
@@ -63,13 +63,9 @@ def assess(comparison: dict, max_drop: float, min_pairs: int) -> tuple[str, str]
     return "pass", "No clear regression under this policy; this does not prove equivalence or improvement."
 
 
-def evaluate(client: Client, body: dict, max_drop: float, min_pairs: int, report: dict) -> int:
-    runs = client.api("POST", "/api/runs", body)
-    report["run_ids"] = [run["id"] for run in runs]
-    if len(runs) != 2:
-        report.update(decision="blocked", reason="Expected exactly two runs, baseline then candidate.")
-        return 2
-    a, b = report["run_ids"]
+def evaluate(client: Client, run_ids: list[str], max_drop: float, min_pairs: int, report: dict) -> int:
+    report["run_ids"] = run_ids
+    a, b = (urllib.parse.quote(id_, safe="") for id_ in run_ids)
     while True:
         states = [client.api("GET", f"/api/runs/{run_id}") for run_id in (a, b)]
         report["run_statuses"] = {state["id"]: state["status"] for state in states}
@@ -94,11 +90,8 @@ def evaluate(client: Client, body: dict, max_drop: float, min_pairs: int, report
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--benchmark", default="toy-arith@1")
-    parser.add_argument("--baseline", default="mock/strong")
-    parser.add_argument("--candidate", default="mock/weak")
-    parser.add_argument("--limit", type=int, default=20)
-    parser.add_argument("--quote", help="Already-approved quote with exactly two models, baseline first.")
+    parser.add_argument("--baseline", required=True, help="Existing baseline run ID.")
+    parser.add_argument("--candidate", required=True, help="Existing candidate run ID.")
     parser.add_argument("--timeout", type=float, default=300, help="Overall HTTP/polling deadline in seconds.")
     parser.add_argument("--max-drop", type=float, default=0, help="Allowed score drop as a fraction, e.g. 0.02.")
     parser.add_argument("--min-pairs", type=int, default=2)
@@ -106,8 +99,8 @@ def main(argv: list[str] | None = None) -> int:
     report = {"schema": "everybench.agent-eval/v1", "decision": "error", "run_ids": []}
     code = 2
     try:
-        if not math.isfinite(args.timeout) or args.timeout <= 0 or args.limit < 1 or args.min_pairs < 2:
-            raise ValueError("Use a positive timeout and limit, and min-pairs >= 2.")
+        if not math.isfinite(args.timeout) or args.timeout <= 0 or args.min_pairs < 2:
+            raise ValueError("Use a positive timeout and min-pairs >= 2.")
         if not math.isfinite(args.max_drop) or not 0 <= args.max_drop <= 1:
             raise ValueError("max-drop must be a finite fraction between 0 and 1.")
         client = Client(
@@ -115,21 +108,7 @@ def main(argv: list[str] | None = None) -> int:
             os.environ.get("EVERYBENCH_API_KEY"),
             time.monotonic() + args.timeout,
         )
-        if args.quote:
-            quote = client.api("GET", "/api/quotes/" + urllib.parse.quote(args.quote, safe=""))
-            if quote["status"] != "approved" or len(quote["models"]) != 2:
-                raise ValueError("Use an approved quote containing exactly two models, baseline first.")
-            body = {"quote_id": args.quote, "content_policy": "metadata"}
-        else:
-            if not all(model.startswith("mock/") for model in (args.baseline, args.candidate)):
-                raise ValueError("Paid models require --quote with an operator-approved two-model quote.")
-            body = {
-                "benchmark": args.benchmark,
-                "models": [args.baseline, args.candidate],
-                "limit": args.limit,
-                "content_policy": "metadata",
-            }
-        code = evaluate(client, body, args.max_drop, args.min_pairs, report)
+        code = evaluate(client, [args.baseline, args.candidate], args.max_drop, args.min_pairs, report)
     except TimeoutError:
         report.update(decision="timeout", reason="Deadline or HTTP timeout reached; inspect run_ids before retrying.")
     except (RuntimeError, ValueError) as ex:

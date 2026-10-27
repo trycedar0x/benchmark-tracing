@@ -14,9 +14,11 @@ from sqlalchemy.orm import Session
 
 from everybench.artifacts import write_sample_artifact
 from everybench.db import Run, SampleResult, Span, Trace
-from everybench.finance.runtime import TASKS as FINANCE_TASKS
 from everybench.pricing import cost_for
 from everybench.redact import apply_policy, redact, scrub_attributes
+
+# Historical Inspect task identifiers: retained only for imported cost attribution.
+FINANCE_TASKS = {"everybench/finance_indicator", "everybench/finance_big_public50"}
 
 _CONTENT_FIELDS = ("answer", "explanation", "target", "input", "output", "score_raw")
 

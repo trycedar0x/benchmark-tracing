@@ -232,30 +232,63 @@ def test_dataset_draft_review_and_export_from_import():
 
 
 def test_dataset_from_benchmark_failures():
-    from everybench.catalog import get_benchmark
-    from everybench.execution import execute_run
-    from everybench.service import create_runs
+    from historical import historical_run
 
-    [run] = create_runs(get_benchmark("toy-arith"), ["mock/weak"], limit=10)
-    execute_run(run.id)
+    run = historical_run(model="mock/weak", limit=40)
     ds = create_dataset("arith misses")
     items = add_run_samples(ds.id, run.id, ["incorrect"], split="dev")
     assert items and all(i.split == "dev" and i.input.startswith("What is") for i in items)
     assert all(i.usage_rights == "licensed" and i.provenance["outcome"] == "incorrect" for i in items)
 
 
+def test_historical_dataset_rights_are_unknown_without_recorded_license():
+    from historical import historical_run
+
+    from everybench.db import Run
+
+    run = historical_run(limit=1)
+    with session_scope() as session:
+        session.get(Run, run.id).manifest = {}
+    ds = create_dataset("unlicensed history")
+    [item] = add_run_samples(ds.id, run.id, [], split="dev")
+    assert item.usage_rights == "unknown"
+    assert item.provenance["benchmark"] == run.benchmark
+    assert item.provenance["target"] == "4"
+    with pytest.raises(ReviewError, match="usage rights are unknown"):
+        review_item(item.id, reviewer="t", reference_output="4", status="approved")
+
+
 def test_inspect_log_import_creates_comparable_run(tmp_path):
-    import glob
+    from inspect_ai.log import EvalConfig, EvalDataset, EvalLog, EvalPlan, EvalSample, EvalSpec, write_eval_log
+    from inspect_ai.model import ModelOutput
 
-    from everybench.catalog import get_benchmark
-    from everybench.execution import execute_run
-    from everybench.service import create_runs
-
-    [run] = create_runs(get_benchmark("toy-arith"), ["mock/strong"], limit=5)
-    finished = execute_run(run.id)
-    [log_path] = glob.glob(str(tmp_path / "home" / "logs" / run.id / "*.eval"))
+    log_path = tmp_path / "historical.json"
+    log = EvalLog(
+        status="success",
+        eval=EvalSpec(
+            created="2026-01-01T00:00:00Z",
+            task="toy_arith",
+            model="mock/strong",
+            dataset=EvalDataset(name="historical", samples=5),
+            config=EvalConfig(),
+        ),
+        plan=EvalPlan(name="historical", steps=[], config={}),
+        samples=[
+            EvalSample(
+                id=str(i),
+                epoch=1,
+                input="What is 2+2?",
+                target="4",
+                metadata={},
+                scores={"match": {"value": 1}},
+                output=ModelOutput.from_content("mock/strong", "4"),
+            )
+            for i in range(5)
+        ],
+    )
+    write_eval_log(log, str(log_path), format="json")
     record = create_import(
-        "inspect_log", project=None, usage_rights="own_data", content_policy="full", options={"path": log_path}
+        "inspect_log", project=None, usage_rights="own_data", content_policy="full", options={"path": str(log_path)}
     )
     result = execute_import(record.id)
     assert result.status == "succeeded" and result.traces_imported == 5
@@ -263,7 +296,7 @@ def test_inspect_log_import_creates_comparable_run(tmp_path):
 
     with session_scope() as session:
         imported_run = session.scalars(select(Run).where(Run.benchmark.like("external:%toy_arith"))).one()
-        assert imported_run.n_correct == finished.n_correct and imported_run.samples_done == 5
+        assert imported_run.n_correct == 5 and imported_run.samples_done == 5
 
 
 def test_otlp_file_import(tmp_path):

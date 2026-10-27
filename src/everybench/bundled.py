@@ -1,24 +1,13 @@
-"""Bundled offline benchmarks and a deterministic mock model provider.
-
-These let the whole product run without network access or API keys:
-
-    everybench run toy-arith --model mock/strong --model mock/weak
-
-Mock models answer correctly at a fixed, model-specific rate decided by a hash
-of the model name and question, so results are reproducible across runs.
-"""
+"""Deterministic mock evaluator provider for offline user-agent grading tests."""
 
 from __future__ import annotations
 
 import ast
 import hashlib
 import operator
-import random
 import re
 from typing import Any
 
-from inspect_ai import Task, task
-from inspect_ai.dataset import Sample
 from inspect_ai.model import (
     ChatMessage,
     ChatMessageTool,
@@ -28,45 +17,10 @@ from inspect_ai.model import (
     ModelUsage,
     modelapi,
 )
-from inspect_ai.scorer import match
-from inspect_ai.solver import generate, system_message, use_tools
-from inspect_ai.tool import Tool, ToolChoice, ToolInfo, tool
+from inspect_ai.tool import ToolChoice, ToolInfo
 
 _OPS = {ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul}
 _QUESTION = re.compile(r"What is (-?\d+) ([+\-*]) (-?\d+)\?")
-
-
-def _questions(seed: int, count: int, low: int, high: int) -> list[tuple[str, int]]:
-    rng = random.Random(seed)
-    out = []
-    for _ in range(count):
-        a, b = rng.randint(low, high), rng.randint(low, high)
-        op = rng.choice(["+", "-", "*"])
-        value = {"+": a + b, "-": a - b, "*": a * b}[op]
-        out.append((f"What is {a} {op} {b}?", value))
-    return out
-
-
-@task(name="toy_arith")
-def toy_arith() -> Task:
-    samples = [
-        Sample(id=f"arith-{i:03d}", input=f"{q} Reply with only the number.", target=str(v))
-        for i, (q, v) in enumerate(_questions(seed=7, count=40, low=2, high=99))
-    ]
-    return Task(dataset=samples, solver=generate(), scorer=match(location="end", numeric=True))
-
-
-@tool
-def calculator() -> Tool:
-    async def execute(expression: str) -> str:
-        """Evaluate an integer arithmetic expression using +, - and *.
-
-        Args:
-            expression: The expression to evaluate, for example "12 * 34".
-        """
-        return str(_safe_eval(expression))
-
-    return execute
 
 
 def _safe_eval(expression: str) -> int:
@@ -82,19 +36,6 @@ def _safe_eval(expression: str) -> int:
         raise ValueError(f"Unsupported expression: {expression}")
 
     return walk(ast.parse(expression, mode="eval"))
-
-
-@task(name="toy_tools")
-def toy_tools() -> Task:
-    samples = [
-        Sample(id=f"tools-{i:03d}", input=f"{q} Use the calculator, then reply with only the number.", target=str(v))
-        for i, (q, v) in enumerate(_questions(seed=11, count=30, low=100, high=9999))
-    ]
-    return Task(
-        dataset=samples,
-        solver=[system_message("You are a careful assistant with a calculator."), use_tools(calculator()), generate()],
-        scorer=match(location="end", numeric=True),
-    )
 
 
 # Accuracy, error rate and resolved-model behaviour for each mock model.
