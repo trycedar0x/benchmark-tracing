@@ -4,7 +4,7 @@
 
 The catalog, target listing and submission resolve the existing `current_workspace` dependency through `auth.authenticate`. API keys use their stored workspace/role; session workspace hints select only stored memberships (an unknown hint falls back to an authorized membership). Viewers may read metadata but all mutations fail before effects. Hidden targets and unknown IDs return the same 404.
 
-Authentication-off operation is local-only: evaluation endpoints require both a loopback TCP peer and loopback Host, reject cross-origin Origin and Fetch Metadata headers, and do not trust forwarded identity headers. Use authentication for shared or reverse-proxied deployments. The CLI serving boundary must also refuse non-loopback binds without authentication.
+Authentication-off operation is local-only: evaluation endpoints require both a loopback TCP peer and loopback Host, reject cross-origin Origin and Fetch Metadata headers, and do not trust forwarded identity headers. Use authentication for shared or reverse-proxied deployments. The CLI serving boundary refuses non-loopback binds without authentication and disables Uvicorn proxy-header rewriting in local mode, so the loopback check observes the TCP peer. Direct ASGI deployments must likewise disable proxy-header rewriting in auth-off mode; shared or reverse-proxied serving requires authentication. Authenticated CLI serving retains proxy scheme handling for Secure cookies.
 
 ## Operator targets
 

@@ -63,6 +63,18 @@ def test_help_has_no_legacy_execution_commands():
         assert "No such command" in rejected.output
 
 
+@pytest.mark.parametrize("authenticated", [False, True])
+def test_serve_preserves_tcp_peer_in_auth_off_mode(monkeypatch, authenticated):
+    monkeypatch.setenv("EVERYBENCH_AUTH", "1" if authenticated else "0")
+    monkeypatch.setenv("FORWARDED_ALLOW_IPS", "*")
+    captured = {}
+    monkeypatch.setattr("everybench.server.create_app", lambda **kwargs: "app")
+    monkeypatch.setattr("uvicorn.run", lambda app, **kwargs: captured.update(kwargs))
+    result = CliRunner().invoke(app, ["serve", "--workers", "0"])
+    assert result.exit_code == 0, result.output
+    assert captured["proxy_headers"] is authenticated
+
+
 @pytest.mark.parametrize("host", ["0.0.0.0", "::", "192.0.2.1", "example.com"])
 def test_serve_rejects_unauthenticated_non_loopback_before_backend_import(host):
     result = CliRunner().invoke(app, ["serve", "--host", host])

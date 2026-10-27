@@ -692,7 +692,10 @@ def serve(
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     console.print(f"everybench on http://{host}:{port}  (workers: {workers})")
-    uvicorn.run(create_app(workers=workers), host=host, port=port, log_level="warning")
+    # Local authorization must see the TCP peer, not Uvicorn's forwarded-header replacement.
+    uvicorn.run(
+        create_app(workers=workers), host=host, port=port, log_level="warning", proxy_headers=env("AUTH") == "1"
+    )
 
 
 @app.command()
