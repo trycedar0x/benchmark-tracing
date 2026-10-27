@@ -74,25 +74,9 @@ def catalog(
     as_json: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """List implemented experimental user-agent adapters; never load datasets or providers."""
-    from dataclasses import asdict
+    from everybench.evaluation.benchmarks import catalog_metadata
 
-    from everybench.finance.datasets import DATASETS
-
-    entries = [
-        asdict(spec)
-        | {
-            "id": spec.name,
-            "experimental": True,
-            "official_parity": False,
-            "requires_trace": spec.name == "bigfinance-public-50",
-            "grading_requirements": (
-                "Explicit judge models and complete visible agent trace evidence."
-                if spec.name == "bigfinance-public-50"
-                else "One explicit judge and an explicit extractor; grades the submitted response."
-            ),
-        }
-        for spec in DATASETS.values()
-    ]
+    entries = catalog_metadata()
     if benchmark:
         entries = [entry for entry in entries if entry["id"] == benchmark]
         if not entries:
@@ -104,7 +88,12 @@ def catalog(
     for column in ("Benchmark", "Cases", "License", "Grading requirements"):
         table.add_column(column, overflow="fold")
     for entry in entries:
-        table.add_row(entry["id"], str(entry["count"]), entry["license"], entry["grading_requirements"])
+        requirements = f"Judges: {entry['judge_requirement']}"
+        if entry["requires_extractor"]:
+            requirements += "; explicit extractor"
+        if entry["requires_trace"]:
+            requirements += "; complete visible trace"
+        table.add_row(entry["id"], str(entry["count"]), entry["license"], requirements)
     console.print(table)
 
 

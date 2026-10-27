@@ -10,6 +10,29 @@ from test_backend_queue import backend as backend
 from everybench.db import Job, Run, SampleResult, Span, Trace, session_scope
 
 
+@pytest.mark.parametrize("web_built", [False, True])
+def test_retired_execution_routes_absent_with_or_without_web_build(tmp_path, monkeypatch, web_built):
+    from fastapi.testclient import TestClient
+
+    from everybench.server import create_app
+
+    if web_built:
+        (tmp_path / "static/assets").mkdir(parents=True)
+        (tmp_path / "static/index.html").write_text("<!doctype html><title>Test UI</title>")
+    with monkeypatch.context() as context:
+        context.setattr("everybench.server.resources.files", lambda package: tmp_path)
+        app = create_app()
+    with TestClient(app) as client:
+        assert not any(
+            path.startswith(("/api/models", "/api/quotes")) for path in client.get("/openapi.json").json()["paths"]
+        )
+        for path in ("/api/models", "/api/quotes", "/api/quotes/unknown"):
+            assert client.get(path).status_code == 404
+            assert client.post(path, json={}).status_code == (405 if web_built else 404)
+    with session_scope() as session:
+        assert session.scalar(select(func.count(Run.id))) == session.scalar(select(func.count(Job.id))) == 0
+
+
 def test_catalog_and_health(backend):
     client = backend["client"]
     assert client.get("/api/health").json()["ok"]
@@ -21,7 +44,9 @@ def test_catalog_and_health(backend):
     assert client.get("/api/catalog/toy-arith").status_code == 404
     for route in ("/api/models", "/api/quotes", "/api/quotes/unknown"):
         assert client.get(route).status_code == 404
-        assert client.post(route, json={}).status_code == 404
+        # A built SPA's GET catch-all legitimately makes unmatched POSTs 405.
+        assert client.post(route, json={}).status_code in (404, 405)
+        assert route not in client.get("/openapi.json").json()["paths"]
     targets = client.get("/api/evaluation-targets").json()
     assert targets == [
         {

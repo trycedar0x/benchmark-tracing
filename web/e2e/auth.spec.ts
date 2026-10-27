@@ -19,7 +19,7 @@ test('sign in, create an API key, store a secret, sign out', async ({ page }) =>
   await page.locator('#key-name').fill('ci')
   await page.getByRole('button', { name: 'Create key' }).click()
   await expect(page.getByText(/Copy this key now/)).toBeVisible()
-  await expect(page.locator('code').filter({ hasText: /^bt_/ })).toBeVisible()
+  await expect(page.locator('code').filter({ hasText: /^ee_/ })).toBeVisible()
 
   await page.locator('#secret-value').fill('sk-test-value')
   await page.getByRole('button', { name: 'Save' }).click()

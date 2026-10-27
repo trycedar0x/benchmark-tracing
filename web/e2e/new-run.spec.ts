@@ -1,80 +1,15 @@
+import { execFileSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import { expect, test, type Page } from '@playwright/test'
 import type { CatalogEntry, EvaluationTarget, Run } from '../src/api'
 
-const catalog: CatalogEntry[] = [
-  {
-    ref: 'findeepindicator',
-    name: 'FinDeepIndicator',
-    family: 'finance',
-    task_count: 3350,
-    requires_trace: false,
-    experimental: true,
-    license: 'Apache-2.0',
-    grader: 'Response numeric accuracy',
-    description: 'Grades submitted responses.',
-  },
-  {
-    ref: 'bigfinance-public-50',
-    name: 'BigFinance public 50',
-    family: 'finance',
-    task_count: 50,
-    requires_trace: true,
-    experimental: true,
-    license: 'CC-BY-4.0',
-    grader: 'Visible trace rubric',
-    description: 'Public 50-item subset only.',
-  },
-]
-const targets: EvaluationTarget[] = [
-  {
-    id: 'response-agent',
-    name: 'Response agent',
-    version: 'v1',
-    origin: 'https://agent.example',
-    has_trace_source: false,
-  },
-  {
-    id: 'trace-agent',
-    name: 'Trace agent',
-    version: 'v2',
-    origin: 'https://trace-agent.example',
-    has_trace_source: true,
-  },
-]
-
-const queuedRun: Run = {
-  id: 'queued-run',
-  group_id: null,
-  created_at: '2026-01-01T00:00:00Z',
-  started_at: null,
-  finished_at: null,
-  status: 'queued',
-  benchmark: 'findeepindicator',
-  variant_key: 'findeepindicator',
-  model: null,
-  target_kind: 'external_agent',
-  target: { name: 'Response agent', version: 'v1' },
-  agent: null,
-  resolved_models: [],
-  limit: null,
-  epochs: 1,
-  budget_usd: null,
-  content_policy: 'redacted',
-  quote_id: null,
-  samples_total: null,
-  samples_done: 0,
-  n_correct: 0,
-  n_error: 0,
-  input_tokens: 0,
-  output_tokens: 0,
-  cost_usd: null,
-  metrics: {},
-  log_path: null,
-  error: null,
-  accuracy: null,
-  score: null,
-  purpose: 'eval',
-}
+// Build browser fixtures from the real routes, in a disposable database with no worker.
+const { catalog, targets, queuedRun } = JSON.parse(
+  execFileSync('uv', ['run', 'python', 'tests/web_api_fixture.py'], {
+    cwd: fileURLToPath(new URL('../../', import.meta.url)),
+    encoding: 'utf8',
+  }),
+) as { catalog: CatalogEntry[]; targets: EvaluationTarget[]; queuedRun: Run }
 
 type MockOptions = {
   role?: string
@@ -112,14 +47,19 @@ async function mockApi(page: Page, options: MockOptions = {}) {
       const submission = route.request().postDataJSON()
       submissions.push(submission)
       const target = targets.find((item) => item.id === submission.target_id)
-      run = { ...queuedRun, benchmark: submission.benchmark, content_policy: submission.content_policy, target }
+      run = {
+        ...queuedRun,
+        benchmark: submission.benchmark,
+        content_policy: submission.content_policy,
+        target: { ...queuedRun.target, ...target },
+      }
       return route.fulfill(
         options.submissionError
           ? { status: 422, json: { detail: 'Evaluator configuration unavailable; no agent invoked.' } }
-          : { json: run },
+          : { status: 201, json: run },
       )
     }
-    if (path === '/api/runs/queued-run') return route.fulfill({ json: run })
+    if (path === `/api/runs/${queuedRun.id}`) return route.fulfill({ json: run })
     if (path.endsWith('/samples')) return route.fulfill({ json: { total: 0, items: [] } })
     throw new Error(`Unexpected API call: ${route.request().method()} ${path}`)
   })
@@ -156,7 +96,7 @@ test('submits one strict evaluation payload with redacted default and explicit c
   await page.locator('#grading-timeout').fill('120')
   await page.getByRole('checkbox').check()
   await start.click()
-  await expect(page).toHaveURL(/\/runs\/queued-run$/)
+  await expect(page).toHaveURL(new RegExp(`/runs/${queuedRun.id}$`))
   await expect(page.getByText('queued', { exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: /findeepindicator.*Response agent/ })).toBeVisible()
   expect(submissions).toEqual([
@@ -225,7 +165,7 @@ test('BigFinance blocks a target without traces; switching benchmark omits extra
   await page.locator('#judges').fill('anthropic/judge, openai/judge')
   await choose(page, 'content', 'Metadata only')
   await page.getByRole('button', { name: 'Start evaluation' }).click()
-  await expect(page).toHaveURL(/\/runs\/queued-run$/)
+  await expect(page).toHaveURL(new RegExp(`/runs/${queuedRun.id}$`))
   expect(submissions).toEqual([
     {
       benchmark: 'bigfinance-public-50',
@@ -287,7 +227,13 @@ test('catalog exposes experimental finance counts, trace requirements and licens
   await expect(page.getByText('Experimental', { exact: true })).toHaveCount(2)
   await expect(page.getByText(/not official leaderboard parity/)).toBeVisible()
   await expect(page.getByText('Complete visible trace required')).toBeVisible()
-  await expect(page.getByRole('cell', { name: 'CC-BY-4.0', exact: true })).toBeVisible()
+  for (const entry of catalog) {
+    const row = page.getByRole('row').filter({ has: page.getByText(entry.id, { exact: true }) })
+    await expect(row.getByRole('link', { name: entry.license, exact: true })).toHaveAttribute('href', entry.license_url)
+    await expect(row.getByText(entry.attribution, { exact: true })).toBeVisible()
+    await expect(row.getByText(`Revision: ${entry.revision}`, { exact: true })).toBeVisible()
+    await expect(row.getByText(entry.description, { exact: true })).toBeVisible()
+  }
   await expect(page.getByText(/gsm8k|Harbor|Docker|Get quote/)).toHaveCount(0)
 })
 

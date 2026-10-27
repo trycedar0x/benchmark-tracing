@@ -8,6 +8,7 @@ everybench is used by coding agents as well as people. Keep the Python SDK, HTTP
 - User-owned callable/HTTP evaluation: [SDK/CLI contracts](docs/evaluating-your-agent.md).
 - Reusable consumer skills: [skills/README.md](skills/README.md). These teach tool use, not repository contribution.
 - Human walkthrough: [docs/guide.md](docs/guide.md).
+- Queued API/operator profiles and credential isolation: [backend contract](docs/backend-evaluation-contract.md).
 - The public SDK exports `EveryBench` for tracing/delivery and module-level `evaluate` / `evaluate_sync` for user-owned agent evaluation. User-owned-agent evaluation is the sole execution mode. The HTTP API queues operator-authorized target IDs; history/comparison remain available for legacy model runs.
 
 ## Setup and checks
@@ -22,7 +23,7 @@ uv run ruff check src tests examples skills
 
 The base environment supports deterministic evaluation, historical imports/comparisons and tracing tests without provider keys, Docker or a web build. Install `--extra finance` for supported finance judge clients; `postgres` and `eee` retain database/export integrations. There are no Harbor or benchmark scheduling extras. Optional framework/Docker tests may skip. Cross-repository financial-app tests also skip unless the separately supplied compatible sibling app is built; that app is not delivered by this PR.
 
-For frontend changes, also run `npm --prefix web ci && npm --prefix web run build`. Follow the existing shadcn/ui design tokens and components.
+For frontend changes, also run `npm --prefix web ci && npm --prefix web run build`. Follow the existing shadcn/ui design tokens and components. Browser tests run from `web` with `EVERYBENCH_URL` pointing to a local server/preview; the new-run tests obtain actual API fixtures through `uv` in a disposable home with workers disabled. A dedicated authenticated server and `AUTH_URL`/`AUTH_EMAIL`/`AUTH_PASSWORD` enable the retained sign-in smoke test; otherwise it skips.
 
 ## Code map
 

@@ -51,7 +51,7 @@ uv run everybench admin set-secret OPENAI_API_KEY --workspace main
 uv run everybench serve --host 0.0.0.0
 ```
 
-Enable authentication and TLS for shared/reverse-proxied deployments. Auth-off is single-user loopback only; CLI serving rejects other binds. Operators configure `EVERYBENCH_TARGETS_FILE`; submissions use only authorized profile IDs scoped exactly to the principal's workspace. Secrets are workspace-encrypted, independently authorized for agent and trace access, and never accepted in submission bodies. Viewers are read-only. See [queued API boundaries](docs/evaluating-your-agent.md#queued-http-api-and-web-submissions).
+Enable authentication and TLS for shared/reverse-proxied deployments. Auth-off is single-user loopback only; CLI serving rejects other binds. Operators configure `EVERYBENCH_TARGETS_FILE`; submissions use only authorized profile IDs scoped exactly to the principal's workspace. Secrets are workspace-encrypted, independently authorized for agent and trace access, and never accepted in submission bodies. Viewers are read-only. See [queued API boundaries](docs/evaluating-your-agent.md#queued-http-api-and-web-submissions) and the [operator profile and worker configuration guide](docs/backend-evaluation-contract.md).
 
 State defaults to `~/.everybench`; set `EVERYBENCH_HOME` or `EVERYBENCH_DATABASE_URL` for another database (Postgres via the `postgres` extra). Legacy `EVERYEVAL_*`/`BENCHTRACE_*` settings, existing data folders, trace attributes and keys remain compatible.
 

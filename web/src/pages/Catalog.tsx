@@ -13,9 +13,8 @@ export default function CatalogPage() {
       <div className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight">Catalog</h1>
         <p className="text-sm text-muted-foreground">
-          Experimental finance adapters for user-owned agents, not official leaderboard parity. FinDeepIndicator grades
-          submitted responses (3,350 tasks); BigFinance supports only the public 50-item subset and requires genuine
-          complete visible trace evidence.
+          Experimental finance adapters for user-owned agents, not official leaderboard parity. Counts, grading
+          requirements and pinned dataset licenses are listed below.
         </p>
       </div>
       {catalog.isPending && (
@@ -43,16 +42,19 @@ export default function CatalogPage() {
             </TableHeader>
             <TableBody>
               {catalog.data?.map((e) => (
-                <TableRow key={e.ref} className="align-top">
+                <TableRow key={e.id} className="align-top">
                   <TableCell className="pl-6">
                     <div className="font-medium">{e.name}</div>
                     <div className="font-mono text-xs text-muted-foreground">
-                      {e.ref} · {e.family}
+                      {e.id}
                     </div>
                   </TableCell>
                   <TableCell className="max-w-md whitespace-normal">{e.description}</TableCell>
-                  <TableCell className="text-right tabular-nums">{num(e.task_count)}</TableCell>
-                  <TableCell className="max-w-xs whitespace-normal">{e.grader}</TableCell>
+                  <TableCell className="text-right tabular-nums">{num(e.count)}</TableCell>
+                  <TableCell className="max-w-xs whitespace-normal">
+                    {e.judge_requirement === 'one' ? 'One explicit judge' : 'One or more explicit judges'}
+                    {e.requires_extractor && '; explicit extractor required'}
+                  </TableCell>
                   <TableCell>
                     <div className="flex flex-wrap gap-1">
                       {e.experimental && <Badge variant="outline">Experimental</Badge>}
@@ -61,7 +63,13 @@ export default function CatalogPage() {
                       </Badge>
                     </div>
                   </TableCell>
-                  <TableCell className="pr-6 text-xs">{e.license ?? '–'}</TableCell>
+                  <TableCell className="pr-6 text-xs whitespace-normal">
+                    <a href={e.license_url} target="_blank" rel="noreferrer" className="underline">
+                      {e.license}
+                    </a>
+                    <div className="mt-1 text-muted-foreground">{e.attribution}</div>
+                    <div className="mt-1 break-all font-mono text-muted-foreground">Revision: {e.revision}</div>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>

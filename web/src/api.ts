@@ -62,15 +62,19 @@ export type Sample = {
 }
 
 export type CatalogEntry = {
-  ref: string
+  id: string
   name: string
-  family: string
-  grader: string
-  task_count: number
-  requires_trace: boolean
+  description: string
   experimental: boolean
-  license: string | null
-  description: string | null
+  official_parity: boolean
+  count: number
+  requires_trace: boolean
+  requires_extractor: boolean
+  judge_requirement: 'one' | 'one-or-more'
+  license: string
+  license_url: string
+  attribution: string
+  revision: string
 }
 
 export type EvaluationTarget = {

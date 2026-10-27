@@ -39,17 +39,17 @@ export default function NewRunPage({ me, workspacePending }: { me: Me; workspace
   const [content, setContent] = useState<EvaluationSubmission['content_policy']>('redacted')
   const [consent, setConsent] = useState(false)
 
-  const entry = catalog.data?.find((item) => item.ref === benchmark)
+  const entry = catalog.data?.find((item) => item.id === benchmark)
   const target = targets.data?.find((item) => item.id === targetId)
   const judges = identifiers(judgeText)
   const sampleIds = identifiers(sampleText)
-  const needsExtractor = benchmark === 'findeepindicator'
+  const needsExtractor = !!entry?.requires_extractor
   const viewer = me.role === 'viewer'
   const loading = workspacePending || catalog.isPending || targets.isPending
   const loadError = catalog.error || targets.error
   const traceMissing = !!entry?.requires_trace && !target?.has_trace_source
   const judgeError =
-    judges.length > 0 && (new Set(judges).size !== judges.length || (needsExtractor && judges.length !== 1))
+    judges.length > 0 && (new Set(judges).size !== judges.length || (entry?.judge_requirement === 'one' && judges.length !== 1))
   const validNumbers =
     (!limit || (Number.isInteger(Number(limit)) && Number(limit) > 0)) &&
     [timeout, gradingTimeout].every((value) => value !== '' && Number.isFinite(Number(value)) && Number(value) > 0) &&
@@ -155,15 +155,16 @@ export default function NewRunPage({ me, workspacePending }: { me: Me; workspace
                     </SelectTrigger>
                     <SelectContent>
                       {catalog.data?.map((item) => (
-                        <SelectItem key={item.ref} value={item.ref}>
-                          {item.name} · {num(item.task_count)} tasks
+                        <SelectItem key={item.id} value={item.id}>
+                          {item.name} · {num(item.count)} tasks
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                   {entry && (
                     <FieldDescription>
-                      {entry.description} Grading: {entry.grader}.{' '}
+                      {entry.description} Grading: {entry.judge_requirement === 'one' ? 'one judge' : 'one or more judges'}
+                      {entry.requires_extractor ? ' and an explicit extractor' : ''}.{' '}
                       {entry.requires_trace
                         ? 'Requires genuine complete visible trace evidence, not just a final answer.'
                         : 'Grades the submitted response.'}

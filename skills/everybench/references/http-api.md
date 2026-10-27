@@ -4,7 +4,7 @@ Use a server base URL (`EVERYBENCH_URL` for the bundled helper; default http://1
 
 ## Queue one evaluation
 
-GET `/api/catalog` lists only experimental FinDeepIndicator (3,350) and BigFinance public-50 (50), requirements and licenses without downloading data. GET `/api/evaluation-targets` exposes authorized target IDs, name/version, safe origin and trace availability, never secrets or capability-bearing paths.
+GET `/api/catalog` lists only experimental FinDeepIndicator (3,350) and BigFinance public-50 (50), without downloading data. Each entry has `id`, `name`, `description`, `count`, `experimental`, `official_parity`, `requires_trace`, `requires_extractor`, `judge_requirement` (`one` or `one-or-more`), `license`, `license_url`, `attribution` and pinned `revision`; submit its `id` as `benchmark`. CLI `catalog --json` returns the same metadata. GET `/api/evaluation-targets` returns `{id,name,version,origin,has_trace_source}` entries, never secrets or capability-bearing paths.
 
 POST `/api/runs` accepts `benchmark`, `target_id`, `judge_models`, FinDeepIndicator `extractor_model`, optional `sample_ids`, bounded positive `limit`/`timeout`/`grading_timeout`, bounded nonnegative `trace_timeout`, `content_policy` (metadata/redacted/full, default redacted) and explicit `allow_paid: true`. Response is one queued run object. No caller URL, import/file path, credential name, workspace/role, solver model list, epochs, quote or budget is accepted. Obtain operator approval before submission: agent/evaluator costs are not quoted/capped.
 

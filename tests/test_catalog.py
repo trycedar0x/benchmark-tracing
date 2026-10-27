@@ -3,9 +3,12 @@
 import json
 
 import pytest
+from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
 from everybench.cli import app
+from everybench.evaluation.benchmarks import catalog_metadata
+from everybench.server import create_app
 
 
 def test_catalog_lists_only_implemented_adapters_without_loading_data(monkeypatch):
@@ -13,9 +16,26 @@ def test_catalog_lists_only_implemented_adapters_without_loading_data(monkeypatc
         raise AssertionError("Catalog must not load cases or instantiate graders")
 
     monkeypatch.setattr("everybench.finance.datasets.load_dataset", forbidden)
+    monkeypatch.setattr("everybench.evaluation.benchmarks.load_dataset", forbidden)
+    monkeypatch.setattr("everybench.evaluation.benchmarks.FinanceBenchmark.__init__", forbidden)
     result = CliRunner().invoke(app, ["catalog", "--json"])
     assert result.exit_code == 0, result.output
-    entries = {e["id"]: e for e in json.loads(result.output)}
+    metadata = json.loads(result.output)
+    assert metadata == catalog_metadata()
+    with TestClient(create_app(), base_url="http://127.0.0.1", client=("127.0.0.1", 12345)) as client:
+        response = client.get("/api/catalog")
+        assert response.status_code == 200
+        assert response.json() == metadata
+        for entry in metadata:
+            assert client.get(f"/api/catalog/{entry['id']}").json() == entry
+    entries = {e["id"]: e for e in metadata}
+    assert all(
+        set(entry) == {
+            "id", "name", "description", "experimental", "official_parity", "count", "requires_trace",
+            "requires_extractor", "judge_requirement", "license", "license_url", "attribution", "revision",
+        }
+        for entry in entries.values()
+    )
     assert set(entries) == {"findeepindicator", "bigfinance-public-50"}
     assert entries["findeepindicator"]["count"] == 3350
     assert entries["bigfinance-public-50"]["count"] == 50
