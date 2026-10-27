@@ -10,12 +10,17 @@ The public site is prepared for Mintlify Starter. It is a documentation frontend
 - Edit the original Markdown/skill files, then regenerate. Do not independently edit the generated pages.
 - Internal published links are rewritten to site routes; code, repository-contributor and historical-record links point to GitHub. Executable fenced examples remain unchanged. Internal plans, research, acceptance records and local notes are not published as site pages.
 
+- `uv run python scripts/build_references.py` generates the first-class Python evaluation/tracing API, public types and model schemas, every CLI command/group's help, and HTTP/OpenAPI references into `docs-site/reference/`. It uses the frozen base package environment but never constructs clients, runs business callbacks, enters application lifespan, opens a database or invokes providers. Help formatting is fixed so terminal and CI settings do not change the snapshot. Keep these outputs committed with interface changes.
+- Reference facts are generated; workflows and command-specific output/exit semantics remain curated in `docs/cli.md` and the SDK/HTTP guides. In particular, `compare --json` returning exit 0 does not certify compatibility or no regression. CI watches source-code and lockfile changes as well as documentation, and rejects stale interface references.
+
 ## Preview and validate
 
 Use Node.js 22 and Python 3.12+:
 
 ```bash
-python scripts/build_docs.py
+uv sync --frozen
+uv run python scripts/build_references.py
+uv run python scripts/build_docs.py
 npm --prefix docs-site ci --ignore-scripts
 npm --prefix docs-site run validate
 npm --prefix docs-site run check:links

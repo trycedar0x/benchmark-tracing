@@ -46,6 +46,12 @@ PAGES = (
         "Choose the SDK, CLI or queued API, verify offline, and read results safely.",
     ),
     Page(
+        "docs/cli.md",
+        "cli",
+        "Using the CLI",
+        "CLI setup, real evaluation, structured output, command-specific exit codes and safe automation.",
+    ),
+    Page(
         "docs/evaluating-your-agent.md",
         "evaluate",
         "Evaluate your existing agent",
@@ -124,7 +130,10 @@ def rewrite_links(body: str, source: str, root: Path) -> str:
         path = posixpath.normpath(posixpath.join(posixpath.dirname(source), url.path))
         if path.startswith("../") or not (root / path).is_file():
             raise ValueError(f"{source}: missing source link {target!r}")
-        destination = ROUTES.get(path, SOURCE_URL + quote(path, safe="/"))
+        if path.startswith("docs-site/reference/") and Path(path).suffix in (".mdx", ".json"):
+            destination = "/" + path.removeprefix("docs-site/").removesuffix(".mdx")
+        else:
+            destination = ROUTES.get(path, SOURCE_URL + quote(path, safe="/"))
         if url.query:
             destination += "?" + url.query
         if url.fragment:

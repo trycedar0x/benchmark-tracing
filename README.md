@@ -67,7 +67,7 @@ npm --prefix web ci && npm --prefix web run build
 
 Optional extras: `finance` for judge clients, `postgres` for Postgres, `eee` for historical Inspect-log conversion. No benchmark-runner or Harbor extra remains. Read [AGENTS.md](AGENTS.md) before contributing. Historical [acceptance evidence](docs/user-agent-evaluation-acceptance.md) records bounded earlier checks, not authorization for new paid execution.
 
-The Mintlify documentation source is in [`docs-site/`](docs-site/). Consumer guides are generated from the canonical Markdown and portable skills with `python scripts/build_docs.py`; CI rejects drift, broken links and invalid site builds. See [publishing and local preview](docs/publishing.md) for setup and hosted agent-access checks.
+The Mintlify documentation source is in [`docs-site/`](docs-site/). Generate SDK signatures/types, every CLI command's help and HTTP/OpenAPI references with `uv run python scripts/build_references.py`; generate consumer guides from canonical Markdown/skills with `python scripts/build_docs.py`. CI watches interface changes and rejects drift, broken links and invalid site builds. See [publishing and local preview](docs/publishing.md) for setup and hosted agent-access checks.
 
 ## License
 

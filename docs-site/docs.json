@@ -27,8 +27,17 @@
         "group": "Evaluate",
         "pages": [
           "guides/evaluate",
-          "guides/evaluation-sdk",
-          "guides/finance"
+          "guides/finance",
+          "guides/examples"
+        ]
+      },
+      {
+        "group": "Python SDK",
+        "pages": [
+          "reference/sdk-evaluation",
+          "reference/sdk-tracing",
+          "reference/sdk-types",
+          "guides/evaluation-sdk"
         ]
       },
       {
@@ -39,11 +48,18 @@
         ]
       },
       {
-        "group": "Operate and integrate",
+        "group": "CLI",
+        "pages": [
+          "guides/cli",
+          "reference/cli"
+        ]
+      },
+      {
+        "group": "HTTP API",
         "pages": [
           "guides/http-api",
-          "guides/operators",
-          "guides/examples"
+          "reference/http",
+          "guides/operators"
         ]
       },
       {
