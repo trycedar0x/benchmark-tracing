@@ -1,0 +1,38 @@
+---
+title: "Connect your coding agent"
+description: "Read Markdown, discover the docs index, or connect Mintlify's read-only documentation MCP."
+---
+
+Your coding agent can use EveryBench without opening the web app. Pick the documentation access method it supports; you do not need all three.
+
+## Read a guide directly
+
+Copy the URL of [Use with your coding agent](/guides/coding-agents) into your agent's prompt. Mintlify also serves each page as Markdown: append `.md` to the published page URL.
+
+A useful starting prompt is:
+
+> Read this EveryBench guide and inspect my existing agent. Choose SDK, CLI, or an already-authorized queued target. Propose minimal changes and start with an offline check. Ask before spending money or sending captured content to a provider.
+
+## Discover the docs index
+
+At the root of the **published documentation site**, Mintlify supplies:
+
+- `/llms.txt`: an index of pages and concise descriptions.
+- `/llms-full.txt`: the combined documentation content.
+- A Markdown representation of each page.
+
+Start with the small index and fetch relevant pages rather than loading the entire corpus unnecessarily. These are Mintlify hosting features, not files that require manual synchronization in this repository.
+
+## Connect the documentation MCP
+
+Mintlify Starter includes a hosted **search MCP server** at the published documentation site's `/mcp` URL. In your agent's MCP settings, add that full URL as a remote MCP server, using the connection procedure supported by your agent.
+
+This connection provides documentation search/retrieval. It does **not** connect to your EveryBench API, read your traces, invoke your agent, manage credentials or approve spending. Those actions use the separately authorized SDK, CLI or HTTP contracts.
+
+The hosted MCP and generated indexes should be verified after deployment. A local page preview alone is not evidence that the hosted search index is ready. Mintlify's `mint mcp` CLI placeholder is not the way to start this hosted server.
+
+## Install operational instructions
+
+[Portable skills](/guides/install-skills) teach the agent how to operate EveryBench, not just where to search its docs. Keep each skill's `SKILL.md`, `references/` and `scripts/` together when copying it into the consuming project.
+
+Our repository-hosted skills do not require a paid Mintlify AI writing or skill-generation feature. No separate Mintlify chatbot is required: your coding agent can read these pages and execute approved tool calls itself.

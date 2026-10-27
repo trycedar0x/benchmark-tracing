@@ -1,0 +1,13 @@
+{
+  "name": "everybench-docs",
+  "private": true,
+  "scripts": {
+    "dev": "mint dev --no-open",
+    "validate": "mint validate",
+    "check:links": "mint broken-links --check-anchors",
+    "sync:check": "uv run --project .. python ../scripts/build_docs.py --check && uv run --project .. python ../scripts/build_references.py --check"
+  },
+  "devDependencies": {
+    "mint": "4.2.1144"
+  }
+}

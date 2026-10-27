@@ -1,0 +1,68 @@
+---
+title: "Evaluation SDK"
+description: "Python evaluation types, callables, HTTP targets and independent trace sources."
+---
+
+{/* Generated from skills/everybench-sdk/references/evaluation.md; edit the source, then run scripts/build_docs.py. */}
+
+## Public contract
+
+`from everybench.sdk import evaluate, evaluate_sync` invokes a user-owned target through the same engine as `everybench evaluate`. These are module functions, not methods on the tracing client `EveryBench`. Generic benchmarks/callables do not require Docker, Inspect execution or model credentials. `EveryBench` still supplies tracing/delivery; its new `invocation(AgentInput)` context binds actual execution to an evaluation case.
+
+`evaluate(benchmark, agent, *, trace_source=None, allow_paid=False, sample_ids=None, limit=None, timeout=40, trace_timeout=10, grading_timeout=180, content_policy='redacted', workspace_id=None, target_config=None, judge_models=None, extractor_model=None, data_path=None, tolerance=0.01)` returns `EvaluationReport`. `evaluate_sync` accepts the same arguments outside an event loop. Target calls and supported finance grading do not automatically retry. Consent is explicit even for offline callables; it is not an all-inclusive billing cap or permission to exceed operator authorization.
+
+## Minimal offline example
+
+Run only in a throwaway `EVERYBENCH_HOME`, with explicit database URLs (including legacy aliases) unset. This is a deterministic integration fixture, not a benchmark-quality claim or a replacement agent:
+
+```python
+import asyncio
+from everybench.sdk import AgentInput, BenchmarkCase, CallableAgent, GradeResult, evaluate
+
+class ExactCheck:
+    name = "example-exact-check"
+    requires_trace = False
+
+    def describe(self):
+        return {"protocol": "example-exact-v1", "grading": "exact"}
+
+    def cases(self):
+        return [BenchmarkCase(id="original-17", input="What is 2+2?", reference={"answer": "4"})]
+
+    async def grade(self, benchmark_case, result, evidence):
+        return GradeResult(score=float(result.answer == benchmark_case.reference["answer"]), protocol="example-exact-v1")
+
+async def existing_agent(invocation: AgentInput):
+    # Offline fixture only. Replace this with the existing agent call after approval.
+    return "4"
+
+report = asyncio.run(evaluate(
+    ExactCheck(), CallableAgent(existing_agent, name="offline-example", version="v1"),
+    allow_paid=True, content_policy="redacted",
+))
+print(report.model_dump_json())
+```
+
+The agent receives only immutable `AgentInput`: input text, run/sample/attempt IDs and trace context. Reference/rubric fields stay with the scorer. Callables may be sync or async and return a string or `AgentResult(answer=..., trace_id=..., metadata=..., usage=...)`. Sync threads cannot be forcibly cancelled; remote deadlines cannot undo billing or side effects.
+
+## Real HTTP targets and independent evidence
+
+`HttpAgent(url, api_key=None, token_env=None, name='agent', version=None, timeout=40, max_bytes=1048576)` sends only `{"message": case.input}` in a fresh conversation. It accepts strict UTF-8 NDJSON: conversation ID, text deltas, explicit done and clean EOF. It rejects partial/error streams, oversized data and redirects. URLs require HTTPS or loopback HTTP; target authorization stays separate from trace credentials.
+
+Choose an independent `StoreTraceSource(workspace_id=None)`, `HTTPTraceSource(base_url, api_key=None, workspace_id=None, timeout=40)` or `CallbackTraceSource(callback, name='external')`. A callback returns `TraceEvidence` with genuine captured events and immutable invocation binding; it owns external authorization/completion checks. Do not fabricate spans from the answer. Store/HTTP verify producer seals. HTTP defaults to its API credential's authorized workspace; the local persistence workspace is independent.
+
+For native SDK tracing, wrap the actual call in `with tracer.invocation(invocation)`, where `invocation: AgentInput` is supplied by the engine to your target callback. This is **not** the `BenchmarkCase` returned by `cases()` or passed to `grade()`; passing a benchmark case cannot establish invocation binding. Do not create an unrelated new `trace()` root. Capture real child model/tool operations using existing instrumentation. Neutral grading recognizes native `record` keys `input`, `output`, `tool_arguments`, `tool_result`, plus documented GenAI/OpenInference body attributes. A closed delivery seal does not make metadata-only, withheld or partially captured content usable. Producers may set `everybench.evidence.withheld=true` and canonical body-key names in `everybench.evidence.withheld_keys`; never put omitted bodies in metadata. Do not request or submit hidden reasoning as agent evidence.
+
+## Named finance adapters
+
+Experimental names are `findeepindicator` and `bigfinance-public-50`; they are the only named catalog entries and do not claim certified leaderboard parity. Use `everybench[finance]` for OpenAI>=3.4,&lt;4 and Anthropic>=1.17,&lt;2 judge clients. Supported explicit judges use `openai/...`, `openrouter/...`, `anthropic/...` (Anthropic>=1.17,&lt;2), or actually registered mock providers. No default remote model is supplied. Client/provider configuration and pinned complete-dataset hashes are checked before agent invocation.
+
+FinDeepIndicator requires `extractor_model` plus exactly one `judge_models` entry, grades the response and keeps trace diagnostic. BigFinance requires complete visible execution evidence and one or more distinct judges; single-judge adaptation is labeled. Use original `sample_ids`, `limit` and optional `data_path` pointing to the complete immutable dataset. Never edit questions/references to fit the agent. Custom `Benchmark.grade` remains caller-owned, including its retries and cost controls.
+
+## Reports and comparison
+
+The JSON field `schema_version` is `everybench.agent-evaluation.v1`. Reports persist under `$EVERYBENCH_HOME/files/evaluations/RUN_ID/report.json`; `report_path(run_id)` returns the path. Policy filters returned and persisted reports before writing. Keep `target_config` public: credentials are dropped recursively; names/arbitrary prose are not a secret store.
+
+`scored` with zero is incorrect; `agent_error`, `timeout`, `trace_missing`, `grading_error` and `cancelled` have null scores. Missing/incomplete/withheld traces remain explicit. External Score is the mean of non-null cases, not exact-one accuracy; unknown remote costs/tokens remain null. One successful trace or sample does not prove full benchmark correctness.
+
+Use local `everybench compare A B --json` or authenticated `GET /api/compare` for persisted runs. Require matching original cases, grading contract and target kind; legitimate multi-model agents are not single-model revision drift. The HTTP `/api/runs` queue accepts only operator-configured target IDs, never caller-supplied URLs/paths/credentials. The bundled regression helper compares existing run IDs without creating jobs. Shared/reverse-proxied servers require authentication; auth-off is single-user null-workspace loopback only.

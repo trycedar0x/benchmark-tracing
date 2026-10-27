@@ -1,0 +1,96 @@
+---
+title: "Using the CLI"
+description: "CLI setup, real evaluation, structured output, command-specific exit codes and safe automation."
+---
+
+{/* Generated from docs/cli.md; edit the source, then run scripts/build_docs.py. */}
+
+The CLI is a first-class interface for coding agents and people. It does not require a browser or an interactive terminal. The [command reference](/reference/cli) is generated from the actual Typer command tree and each command's `--help`, including subcommands, argument types, defaults, required flags and available JSON modes.
+
+## Install and discover
+
+Use Python 3.12+. Install the version of `everybench` appropriate to your project, or run the current repository code in its frozen environment:
+
+```bash
+# From a checkout of this repository:
+uv sync --frozen
+uv run everybench --help
+uv run everybench evaluate --help
+uv run everybench catalog --json
+```
+
+For an installed package, use `everybench` directly rather than `uv run everybench`. Finance evaluator clients are optional: install `everybench[finance]` or use `uv sync --frozen --extra finance` in the checkout. Discovering help/catalog does not invoke an agent, download benchmark data or call a provider.
+
+The generated reference describes this checkout. If you use another installed version, its own `COMMAND --help` is authoritative. There are no model/Harbor scheduling `run` or `quote` commands.
+
+## Start offline
+
+In a repository checkout, verify the shared evaluation engine with the deterministic callable fixture:
+
+```bash
+unset EVERYBENCH_DATABASE_URL EVERYEVAL_DATABASE_URL BENCHTRACE_DATABASE_URL
+export EVERYBENCH_HOME="$(mktemp -d)"
+uv run python examples/evaluate_callable.py --yes
+```
+
+That explicitly offline fixture makes no paid call and measures integration, not agent quality. The CLI `evaluate` command itself targets an existing strict HTTP agent; Python callables use the SDK. Do not recreate the user's agent as a built-in solver.
+
+## Evaluate an existing HTTP agent
+
+First verify the [HTTP protocol, independent authorization and grading contract](/guides/evaluate). The target must implement conversation/delta/done NDJSON with clean EOF; this is not a generic arbitrary-JSON adapter.
+
+After the operator authorizes agent and evaluator spending, a FinDeepIndicator invocation has this shape. Replace every placeholder with an explicitly chosen value; do not execute the template unchanged:
+
+```bash
+everybench evaluate findeepindicator \
+  --url https://YOUR_AGENT_HOST/api/chat \
+  --name YOUR_AGENT_NAME --version YOUR_REVISION \
+  --token-env YOUR_AGENT_TOKEN_ENV \
+  --extractor openai/YOUR_EXTRACTOR_MODEL \
+  --judge openai/YOUR_JUDGE_MODEL \
+  --limit 1 --timeout 40 --grading-timeout 180 \
+  --content redacted --yes --json
+```
+
+`--token-env` names an environment variable containing the agent credential; the value is not a CLI argument. Independently configure judge-provider credentials. Real execution may load the pinned benchmark data and incurs remote costs; `--limit` and timeouts are not billing caps. `--yes` is explicit consent, not a safe flag to add automatically.
+
+FinDeepIndicator requires one judge and an extractor; traces are optional diagnostic evidence. BigFinance uses `bigfinance-public-50`, no extractor, one or more distinct `--judge` values, and a separate `--trace-url` / `--trace-token-env` or `--trace-store` source. BigFinance cannot grade missing, partial or withheld required evidence. Use `--sample-id` to select original IDs; an optional `--data-path` must contain the complete hash-verified pinned dataset, not an edited subset.
+
+## Local CLI versus queued network API
+
+`evaluate --url` is an explicit local operator capability. The queued HTTP API and web form instead submit an operator-configured target ID; they do not accept arbitrary URLs or credential names. See [the queued API](/guides/http-api).
+
+History commands use the local database selected by `EVERYBENCH_HOME` / `EVERYBENCH_DATABASE_URL`; setting `EVERYBENCH_URL` does not make them remote API clients. For a remote server, read its authenticated HTTP API or use the portable read-only comparison helper. Do not point tests at a real user's database.
+
+## Structured output and exit behavior
+
+Prefer supported JSON output over scraping rich tables. Flags are command-specific, not universal:
+
+```bash
+everybench catalog --json
+everybench runs --json
+everybench show RUN_ID --json
+everybench compare BASELINE_RUN CANDIDATE_RUN --json
+everybench export RUN_ID --format json
+```
+
+`evaluate --json` emits `EveryBench` evaluation-report JSON with schema version `everybench.agent-evaluation.v1`. The API/CLI primary score is the mean of scored cases. Read per-case status, component scores and coverage: wrong answers can score zero, while invocation/trace/grading errors are unscored. A successful shell command is not proof of benchmark quality.
+
+- `evaluate`: exit 0 means a succeeded evaluation; exit 1 means a non-succeeded report or rejected execution configuration. Its explicit Ctrl-C handler exits 130. Parser/usage failures normally exit 2.
+- `compare --json`: returns the comparison object before the text-mode compatibility guard; **exit 0 does not mean comparable or no regression**. Inspect compatibility, coverage, warnings and uncertainty in the JSON.
+- Text-mode `compare`: incompatible runs stop with exit 2 unless `--force` is supplied for exploration. Do not force an incompatible comparison into a CI pass.
+- The [portable read-only regression helper](/guides/evaluation-skill) has a different contract: 0 means no clear regression under its policy, 1 means regression, and 2 means blocked/error. An inconclusive interval is not improvement.
+
+Other command failures are command-specific; verify their generated help and inspect returned status rather than assuming one universal exit-code contract. Keep report IDs and sanitized diagnostics, not secrets or production prompts.
+
+## Remaining command families
+
+The generated reference covers every registered command and subgroup, not only evaluation:
+
+- History and evidence: `runs`, `show`, `trace`, `diff`, `compare`, `export`.
+- Lifecycle: `cancel`, `serve`, `worker`.
+- Imports: `import langfuse`, `langsmith`, `braintrust`, `otlp`, `inspect-log`.
+- Reviewed datasets: `dataset create`, `add`, `show`, `review`, `export`.
+- Administration: `admin create-user`, `create-key`, `set-secret`.
+
+Administration and dataset/import operations can mutate state; they are not part of a read-only verification. Shared/reverse-proxied servers require authentication and TLS; auth-off serving is single-user loopback only. See [operator configuration](/guides/operators), and check the generated command reference for exact arguments before acting.

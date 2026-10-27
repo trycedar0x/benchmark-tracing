@@ -1,0 +1,20 @@
+---
+title: "Examples"
+description: "Offline callable and tracing fixtures, plus optional framework integrations."
+---
+
+{/* Generated from examples/README.md; edit the source, then run scripts/build_docs.py. */}
+
+Evaluate existing agents and capture actual traces. Read [the SDK/CLI guide](/guides/evaluate) and [coding-agent guide](/guides/coding-agents).
+
+| Example | Contract |
+| --- | --- |
+| [evaluate_callable.py](https://github.com/trycedar0x/benchmark-tracing/blob/main/examples/evaluate_callable.py) | Offline custom benchmark/callable fixture; `--yes` required; no server/provider |
+| [sdk_trace_agent.py](https://github.com/trycedar0x/benchmark-tracing/blob/main/examples/sdk_trace_agent.py) | Deterministic SDK delivery check, not model quality |
+| [otlp_json.sh](https://github.com/trycedar0x/benchmark-tracing/blob/main/examples/otlp_json.sh) | OTLP JSON delivery with curl |
+| [openai_agents_trace.py](https://github.com/trycedar0x/benchmark-tracing/blob/main/examples/openai_agents_trace.py) | Real framework tracing; provider calls need approval |
+| [langchain_agent_trace.py](https://github.com/trycedar0x/benchmark-tracing/blob/main/examples/langchain_agent_trace.py) | Real framework tracing; provider calls need approval |
+
+Use a throwaway `EVERYBENCH_HOME`, unset current/legacy database URLs and run the callable fixture first. Tracing examples require a loopback `everybench serve` receiver; it defaults to metadata. Set `EVERYBENCH_INGEST_CONTENT` deliberately before capturing content. Shared/reverse-proxied servers require authentication and TLS.
+
+Portable helpers remain self-contained in their skill folders: [SDK smoke](https://github.com/trycedar0x/benchmark-tracing/blob/main/skills/everybench-sdk/scripts/trace_smoke.py) and [read-only comparison gate](https://github.com/trycedar0x/benchmark-tracing/blob/main/skills/everybench/scripts/evaluate.py). The latter takes two existing run IDs and does not create jobs. Old model/Harbor/quote execution examples have been removed.

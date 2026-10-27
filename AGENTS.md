@@ -25,6 +25,8 @@ The base environment supports deterministic evaluation, historical imports/compa
 
 For frontend changes, also run `npm --prefix web ci && npm --prefix web run build`. Follow the existing shadcn/ui design tokens and components. Browser tests run from `web` with `EVERYBENCH_URL` pointing to a local server/preview; the new-run tests obtain actual API fixtures through `uv` in a disposable home with workers disabled. A dedicated authenticated server and `AUTH_URL`/`AUTH_EMAIL`/`AUTH_PASSWORD` enable the retained sign-in smoke test; otherwise it skips.
 
+For documentation-site changes, read [docs/publishing.md](docs/publishing.md). Run `uv run python scripts/build_references.py` for generated SDK signatures/types, all CLI help and HTTP/OpenAPI schemas, then `python scripts/build_docs.py` for canonical Markdown/skills. Commit derived `docs-site/reference/` and `docs-site/guides/` outputs with their sources. Verify both generators with `--check`, `npm --prefix docs-site ci --ignore-scripts`, `npm --prefix docs-site run validate` and `npm --prefix docs-site run check:links`; include `scripts` in Ruff checks. Keep workflows, examples and command-specific exit semantics curated; generated help is not proof of a successful evaluation or compatible comparison. Keep internal notes, credentials and runtime state outside the published allowlist. Use Mintlify's default theme/tokens/components, not custom CSS.
+
 ## Code map
 
 | Area | Files |
