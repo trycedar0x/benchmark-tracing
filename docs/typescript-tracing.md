@@ -126,7 +126,7 @@ Without a producer seal the trace stays `open`; basic trace inspection does not 
 
 ## 5. Optional: make traces usable for evaluation
 
-Export alone does not implement evaluation. The current HTTP agent transport expects the strict NDJSON contract described in [Evaluate your own agent](evaluating-your-agent.md#http-separate-target-and-trace-authorization); it is not a generic arbitrary-URL runner. Preserve your existing agent behavior and only use this transport if the endpoint meets that contract.
+Export alone does not implement evaluation. The current HTTP agent transport expects the strict NDJSON contract described in [Evaluate your own agent](evaluating-your-agent.md); it is not a generic arbitrary-URL runner. Preserve your existing agent behavior and only use this transport if the endpoint meets that contract.
 
 For an evaluation-compatible endpoint:
 
@@ -145,7 +145,7 @@ Content-Type: application/json
 {"expected_spans": 3}
 ```
 
-`3` is illustrative, not a fixed count. Include every span produced for that trace, and never seal with a guessed count or reduce the count to hide delivery failures. The receiver marks a sealed trace `closed` once the declared number has arrived; a seal certifies delivery count, not disclosure of omitted content. Mark intentionally withheld capture explicitly as described in the [evaluation contract](evaluating-your-agent.md#trace-callback-and-local-sdkstore).
+`3` is illustrative, not a fixed count. Include every span produced for that trace, and never seal with a guessed count or reduce the count to hide delivery failures. The receiver marks a sealed trace `closed` once the declared number has arrived; a seal certifies delivery count, not disclosure of omitted content. Mark intentionally withheld capture explicitly as described in the [evaluation contract](evaluating-your-agent.md).
 
 The evaluator independently reads the receiver with `HTTPTraceSource`, using separately configured trace authorization. An OTLP exporter is not a historical-read adapter. Missing, incomplete, withheld or inaccessible evidence must remain unscorable when the benchmark requires traces.
 

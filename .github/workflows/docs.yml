@@ -1,0 +1,48 @@
+name: docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'docs-site/**'
+      - 'skills/**'
+      - 'examples/README.md'
+      - 'scripts/build_docs.py'
+      - 'tests/test_docs_site.py'
+      - '.github/workflows/docs.yml'
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'docs-site/**'
+      - 'skills/**'
+      - 'examples/README.md'
+      - 'scripts/build_docs.py'
+      - 'tests/test_docs_site.py'
+      - '.github/workflows/docs.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  mintlify:
+    runs-on: ubuntu-latest
+    env:
+      MINTLIFY_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: docs-site/package-lock.json
+      - name: Verify generated guides match their canonical sources
+        run: python scripts/build_docs.py --check
+      - run: npm --prefix docs-site ci --ignore-scripts
+      - name: Validate navigation, MDX and strict site build
+        run: npm --prefix docs-site run validate
+      - name: Check internal links and heading anchors
+        run: npm --prefix docs-site run check:links

@@ -24,7 +24,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v6
       - run: uv sync --frozen --extra eee --extra postgres --extra finance
-      - run: uv run ruff check src tests examples skills
+      - run: uv run ruff check src tests examples skills scripts
       - name: Tests
         run: |
           unset EVERYBENCH_DATABASE_URL EVERYEVAL_DATABASE_URL BENCHTRACE_DATABASE_URL

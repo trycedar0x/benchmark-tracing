@@ -1,0 +1,39 @@
+---
+title: "Evaluate the agent you already run"
+description: "Use EveryBench from your coding agent, Python SDK, CLI or an authorized HTTP target."
+---
+
+EveryBench supplies benchmark cases, invokes **your existing agent**, collects actual answers and execution evidence, grades results and compares revisions. It does not build a replacement agent.
+
+## Start with your coding agent
+
+Give your coding agent this instruction, attaching the link to **Use with your coding agent** from this site's sidebar:
+
+> Read the EveryBench coding-agent guide. Inspect this project's existing agent and tests, then propose the smallest supported integration. Verify with an offline fixture first. Ask before any real agent or judge calls. Do not recreate my agent, disclose secrets, or invent tracing evidence.
+
+[Read the coding-agent guide](/guides/coding-agents), [install the portable skills](/guides/install-skills), or [connect these docs to your agent](/connect-your-agent).
+
+## Choose an interface
+
+| Interface | Use it for |
+| --- | --- |
+| [Python SDK](/guides/evaluation-sdk) | Evaluate an existing Python callable or compatible HTTP service |
+| [CLI](/guides/evaluate) | Run evaluation and inspect structured results from a terminal or coding agent |
+| [Queued HTTP API and web](/guides/http-api) | Submit operator-authorized target IDs and inspect workspace-scoped runs |
+| [Tracing SDK and OTLP](/guides/tracing-sdk) | Capture actual model/tool operations and verify delivery |
+
+HTTP agents must implement the documented strict NDJSON protocol. The network API does not accept arbitrary execution URLs. A browser and an interactive terminal are optional.
+
+## Know what is being measured
+
+- **FinDeepIndicator:** 3,350 public cases; grades the submitted response, with traces optional for diagnosis.
+- **BigFinance public-50:** 50 public cases; rubric grading requires genuine, complete, visible execution traces.
+- **Custom Python benchmarks:** provide your own cases and grading contract through the SDK.
+
+The two finance adapters are experimental EveryBench adaptations, not official leaderboard parity. Read the [scoring requirements and licenses](/guides/finance).
+
+## Start safely
+
+Verify an [offline example](/guides/examples) before real evaluation. Actual agent/judge calls require explicit approval; sample limits and timeouts are not cost caps. SDK/ingest default to metadata, while evaluation defaults to redacted storage. Keep credentials and production traces out of agent reports.
+
+This site's search MCP only helps agents **read documentation**. It cannot execute benchmarks, access your workspace, or approve spending.
