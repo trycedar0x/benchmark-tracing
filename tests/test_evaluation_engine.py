@@ -564,3 +564,97 @@ def test_public_tokenizer_exceptions_are_explicit_and_still_filter_nested_creden
         "tokenizerName": "fixture-tokenizer",
         "TOKENIZER.REVISION": "v1",
     }
+
+
+@pytest.mark.parametrize("status", ["failed", "succeeded", "cancelled", "budget_exceeded", "queued", "missing"])
+def test_bounded_checks_ownership_before_creating_awaitable(status):
+    from everybench.evaluation.engine import _bounded, _EvaluationStopped
+
+    run_id = "run_stopped"
+    if status != "missing":
+        with session_scope() as session:
+            session.add(Run(id=run_id, benchmark="synthetic", variant_key="test", status=status))
+    calls = []
+
+    def start():
+        calls.append("started")
+        return asyncio.get_running_loop().create_future()
+
+    async def scenario():
+        with pytest.raises(asyncio.CancelledError if status == "cancelled" else _EvaluationStopped):
+            await _bounded(start, 1, run_id)
+
+    asyncio.run(scenario())
+    assert not calls
+
+
+@pytest.mark.parametrize("completed", [False, True])
+def test_bounded_checks_state_during_wait_and_after_already_completed_future(completed):
+    from everybench.evaluation.engine import _bounded, _EvaluationStopped
+
+    run_id = "run_bounded"
+    with session_scope() as session:
+        session.add(Run(id=run_id, benchmark="synthetic", variant_key="test", status="running"))
+
+    async def scenario():
+        future = asyncio.get_running_loop().create_future()
+
+        def stop():
+            with session_scope() as session:
+                session.get(Run, run_id).status = "failed"
+
+        def start():
+            if completed:
+                future.set_result("must not proceed")
+                stop()
+            else:
+                asyncio.get_running_loop().call_later(0.01, stop)
+            return future
+
+        with pytest.raises(_EvaluationStopped):
+            await asyncio.wait_for(_bounded(start, 5, run_id), timeout=1)
+        assert future.done()
+        assert completed or future.cancelled()
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("phase", ["agent", "trace", "grading"])
+def test_immediate_terminal_stop_is_not_swallowed_or_scored(phase):
+    calls = []
+    benchmark = SyntheticBenchmark()
+
+    def stop(run_id):
+        with session_scope() as session:
+            run = session.get(Run, run_id)
+            run.status, run.error = "failed", "Original stale failure."
+
+    async def agent(case):
+        calls.append("agent")
+        if phase == "agent":
+            stop(case.run_id)
+        return "answer"
+
+    async def trace(tid, case):
+        calls.append("trace")
+        if phase == "trace":
+            stop(case.run_id)
+        return complete_evidence(tid, case)
+
+    async def grade(case, result, evidence):
+        calls.append("grading")
+        if phase == "grading":
+            stop(evidence.run_id)
+        return GradeResult(score=1, protocol="synthetic-v1")
+
+    benchmark.grade = grade
+    report = evaluate_sync(
+        benchmark, agent, trace_source=CallbackTraceSource(trace), allow_paid=True, content_policy="metadata"
+    )
+    assert calls == ["agent", "trace", "grading"][: ["agent", "trace", "grading"].index(phase) + 1]
+    assert report.status == "failed" and len(report.results) == 1
+    assert report.results[0].status == "unscored" and report.results[0].score is None
+    assert report.metrics["mean_score"] is None
+    with session_scope() as session:
+        run = session.get(Run, report.run_id)
+        assert run.status == "failed" and run.error == "Original stale failure."

@@ -1,10 +1,14 @@
 """Offline API -> real child -> shared engine -> same run/report coverage."""
 
+import csv
+import hashlib
+import io
 import json
 import subprocess
+import sys
 import threading
 import time
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -13,10 +17,11 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 from test_evaluation_finance_cli import pinned_data
 
+from everybench.artifacts import read_sample_artifact
 from everybench.auth import set_secret
-from everybench.db import Job, Run, now, session_scope
+from everybench.db import Job, Run, SampleResult, now, session_scope
 from everybench.evaluation.engine import report_path
-from everybench.execution import execute_run, request_cancel
+from everybench.execution import _child_env, execute_run, request_cancel
 from everybench.finance.datasets import DATASETS
 from everybench.jobs import Worker, claim, finish, process, recover_stale
 from everybench.server import create_app
@@ -33,11 +38,23 @@ REQUEST = {
 
 
 @pytest.fixture
-def backend(monkeypatch, tmp_path):
+def backend(monkeypatch, tmp_path, request):
     monkeypatch.setenv("EVERYBENCH_SECRET_KEY", "test-master")
     monkeypatch.delenv("EVERYEVAL_AUTH", raising=False)
     monkeypatch.delenv("EVERYEVAL_DATABASE_URL", raising=False)
     data = pinned_data(monkeypatch, tmp_path, "findeepindicator")
+    if getattr(request, "param", 1) == 2:
+        rows = list(csv.DictReader(io.StringIO(data.read_text())))
+        stream = io.StringIO()
+        writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
+        writer.writeheader()
+        writer.writerows([rows[0], rows[0] | {"id": "original-18"}])
+        data.write_text(stream.getvalue())
+        monkeypatch.setitem(
+            DATASETS,
+            "findeepindicator",
+            replace(DATASETS["findeepindicator"], count=2, sha256=hashlib.sha256(data.read_bytes()).hexdigest()),
+        )
     calls = []
     trace_calls = []
     started, release = threading.Event(), threading.Event()
@@ -128,6 +145,7 @@ asyncio.run(run_evaluation(sys.argv[1]))
             "bootstrap": bootstrap,
             "spawn": real_popen,
             "data": data,
+            "tmp_path": tmp_path,
         }
     release.set()
     server.shutdown()
@@ -371,3 +389,109 @@ def test_stale_failure_cannot_be_overwritten_by_late_job_completion(backend):
         assert session.get(Job, job.id).status == "failed"
         assert session.get(Run, run["id"]).status == "failed"
     assert not backend["calls"]
+
+
+@pytest.mark.parametrize("backend", [2], indirect=True)
+@pytest.mark.parametrize("phase", ["agent", "grading"])
+@pytest.mark.parametrize("blocked_case", [1, 2])
+def test_surviving_child_stops_after_stale_supervisor(backend, phase, blocked_case):
+    """The actual child stays alive without a supervising worker/heartbeat thread."""
+    markers = backend["tmp_path"]
+    grade_log = markers / "grades.jsonl"
+    held = markers / "held"
+    release = markers / "release-child"
+    bootstrap = backend["bootstrap"].replace(
+        '    assert model == "mock/perfect"',
+        f'''    with open({str(grade_log)!r}, "a") as log:
+        log.write("grading\\n")
+    assert model == "mock/perfect"''',
+    )
+    # Hold the selected agent response or grading coroutine inside the child.
+    bootstrap = bootstrap.replace(
+        "asyncio.run(run_evaluation(sys.argv[1]))",
+        f'''
+from pathlib import Path
+from everybench.evaluation.agents import HttpAgent
+from everybench.evaluation.benchmarks import FinanceBenchmark
+owner = {"HttpAgent" if phase == "agent" else "FinanceBenchmark"}
+method = {"'invoke'" if phase == "agent" else "'grade'"}
+original = getattr(owner, method)
+calls = 0
+async def hold(self, *args, **kwargs):
+    global calls
+    calls += 1
+    result = await original(self, *args, **kwargs)
+    if calls == {blocked_case}:
+        Path({str(held)!r}).touch()
+        while not Path({str(release)!r}).exists():
+            await asyncio.sleep(0.01)
+    return result
+setattr(owner, method, hold)
+asyncio.run(run_evaluation(sys.argv[1]))
+''',
+    )
+    run = queued(backend, limit=2, content_policy="redacted")
+    job = claim("lost-supervisor")
+    assert job.target_id == run["id"]
+    # Reproduce a supervisor that spawned its child and disappeared, leaving the
+    # real process executing against the same run, without a replacement worker.
+    with session_scope() as session:
+        session.get(Run, run["id"]).status = "running"
+    child = backend["spawn"](
+        [sys.executable, "-c", bootstrap, run["id"]],
+        env=_child_env(run["id"]),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+    )
+    try:
+        deadline = time.monotonic() + 15
+        while not held.exists() and child.poll() is None and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert held.exists() and child.poll() is None
+        committed = None
+        if blocked_case == 2:
+            committed = read_sample_artifact(run["id"], "original-17", 1)
+            assert committed["content"]["result"]["score"] == 1
+        grades_before = grade_log.read_text().splitlines() if grade_log.exists() else []
+        calls_before = len(backend["calls"])
+        with session_scope() as session:
+            session.get(Job, job.id).heartbeat_at = now() - timedelta(minutes=5)
+        assert recover_stale() == 1
+        with session_scope() as session:
+            failed = session.get(Run, run["id"])
+            reason, finished = failed.error, failed.finished_at
+        assert child.poll() is None  # Recovery did not kill the surviving process.
+        release.touch()
+        _, stderr = child.communicate(timeout=15)
+        assert child.returncode == 0, stderr.decode()
+        assert not stderr  # In particular no leaked/unawaited coroutine warnings.
+        assert len(backend["calls"]) == calls_before == blocked_case
+        assert (grade_log.read_text().splitlines() if grade_log.exists() else []) == grades_before
+        assert len(grades_before) == blocked_case - (phase == "agent")
+        final = backend["client"].get(f"/api/runs/{run['id']}").json()
+        report = json.loads(report_path(run["id"]).read_text())
+        assert final["status"] == report["status"] == "failed"
+        assert final["error"] == reason and "stopped responding" in reason
+        assert final["samples_done"] == len(report["results"]) == blocked_case
+        assert report["results"][-1]["status"] == "unscored"
+        assert report["results"][-1]["score"] is None
+        if committed:
+            assert read_sample_artifact(run["id"], "original-17", 1) == committed
+            assert report["results"][0]["score"] == 1
+        with session_scope() as session:
+            assert session.get(Run, run["id"]).finished_at == finished
+            assert session.get(Job, job.id).status == "failed"
+            samples = list(session.scalars(select(SampleResult).where(SampleResult.run_id == run["id"])))
+            assert len(samples) == blocked_case and sum(s.score == 1 for s in samples) == blocked_case - 1
+            assert session.scalar(select(func.count(Run.id))) == 1
+        assert claim("replacement") is None
+        assert execute_run(run["id"]).status == "failed"
+        assert len(backend["calls"]) == calls_before
+        stored = json.dumps(final) + json.dumps(report)
+        stored += "".join(p.read_text() for p in report_path(run["id"]).parents[2].rglob("*.json"))
+        assert all(secret not in stored for secret in ("local-agent-secret", "private-capability", "AGENT_TOKEN"))
+    finally:
+        release.touch()
+        if child.poll() is None:
+            child.kill()
+            child.communicate(timeout=5)

@@ -11,9 +11,10 @@ import re
 import secrets
 import tempfile
 import time
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
 from datetime import datetime
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -130,23 +131,41 @@ def _seconds(value: float, name: str, *, zero: bool = False) -> float:
     return value
 
 
-async def _bounded[T](awaitable: Awaitable[T], timeout: float, run_id: str) -> T:
-    task = asyncio.ensure_future(awaitable)
+class _EvaluationStopped(Exception):
+    """Persisted ownership no longer permits execution; not SDK cancellation."""
+
+    def __init__(self, status: str):
+        self.status = status
+        super().__init__("Evaluation is no longer running.")
+
+
+def _check_running(run_id: str) -> None:
+    with session_scope() as session:
+        run = session.get(Run, run_id)
+        status = run.status if run is not None else "failed"
+    if status in ("cancelling", "cancelled"):
+        raise asyncio.CancelledError
+    if status != "running":
+        raise _EvaluationStopped(status)
+
+
+async def _bounded[T](start: Callable[[], Awaitable[T]], timeout: float, run_id: str) -> T:
+    # A factory avoids invocation side effects and unawaited coroutines on a stopped run.
+    _check_running(run_id)
+    task = asyncio.ensure_future(start())
     try:
         async with asyncio.timeout(timeout):
             while not task.done():
+                _check_running(run_id)
                 await asyncio.wait({task}, timeout=min(0.1, timeout))
-                with session_scope() as session:
-                    if session.get(Run, run_id).status == "cancelling":
-                        raise asyncio.CancelledError
+            # Even an already-completed task may have lost ownership while it ran.
+            _check_running(run_id)
             return task.result()
     finally:
         if not task.done():
             task.cancel()
-            try:
-                await task
-            except (asyncio.CancelledError, Exception):
-                pass
+        # Retrieve completed exceptions too, including when the state check stopped us.
+        await asyncio.gather(task, return_exceptions=True)
 
 
 async def _trace(source: TraceSource | None, case: AgentInput, timeout: float) -> TraceEvidence:
@@ -157,9 +176,11 @@ async def _trace(source: TraceSource | None, case: AgentInput, timeout: float) -
     try:
         async with asyncio.timeout(timeout):
             while True:
+                _check_running(case.run_id)
                 evidence = _validate_evidence(
                     await source.get_trace(case.trace_id, case=case), case, trusted_callback=True
                 )
+                _check_running(case.run_id)
                 if evidence.state in ("complete", "withheld") or time.monotonic() >= deadline:
                     return evidence
                 await asyncio.sleep(min(0.05, max(0, deadline - time.monotonic())))
@@ -327,16 +348,20 @@ def _finish(report: EvaluationReport) -> EvaluationReport:
             .where(Run.id == report.run_id)
             .values(
                 status=sql_case(
-                    (Run.status.in_(("failed", "cancelled")), Run.status),
                     (Run.status == "cancelling", "cancelled"),
+                    (Run.status != "running", Run.status),
                     else_=report.status,
                 ),
-                finished_at=now(),
+                finished_at=sql_case(
+                    (Run.status.not_in(("running", "cancelling")), Run.finished_at), else_=now()
+                ),
                 metrics=report.metrics,
                 log_path=str(report_path(report.run_id)),
             )
             .returning(Run.status)
         )
+        if report.status is None:
+            raise EvaluationPersistenceError("Evaluation run ownership is missing.")
         try:
             _write_report(report)
         except Exception:
@@ -406,7 +431,7 @@ async def evaluate(
     cases = cases[:limit]
     if isinstance(benchmark, FinanceBenchmark):
         if queued_id := _QUEUED_RUN.get():
-            await _bounded(benchmark.validate(), grading_timeout, queued_id)
+            await _bounded(benchmark.validate, grading_timeout, queued_id)
         else:
             await benchmark.validate()
     if not hasattr(agent, "invoke") and callable(agent):
@@ -490,10 +515,7 @@ async def evaluate(
         # Detach ambient tracing: evaluator traffic must not become agent evidence.
         token = otel_context.attach(otel_context.Context())
         try:
-            with session_scope() as session:
-                if session.get(Run, run_id).status == "cancelling":
-                    raise asyncio.CancelledError
-            answer = AgentResult.model_validate(await _bounded(agent.invoke(invocation), timeout, run_id))
+            answer = AgentResult.model_validate(await _bounded(partial(agent.invoke, invocation), timeout, run_id))
             if not answer.answer.strip() or answer.trace_id not in (None, invocation.trace_id):
                 raise ValueError("Invalid completed agent result.")
             result.answer = answer.answer
@@ -505,9 +527,11 @@ async def evaluate(
             phase = "trace"
             try:
                 evidence = await _bounded(
-                    _trace(trace_source, invocation, trace_timeout), max(trace_timeout, 0.001) + 0.1, run_id
+                    partial(_trace, trace_source, invocation, trace_timeout), max(trace_timeout, 0.001) + 0.1, run_id
                 )
                 result.trace_state = evidence.state
+            except _EvaluationStopped:
+                raise
             except Exception:
                 result.trace_state = "missing"
             if benchmark.requires_trace and (evidence is None or evidence.state != "complete"):
@@ -518,7 +542,7 @@ async def evaluate(
             else:
                 phase = "grading"
                 grade = GradeResult.model_validate(
-                    await _bounded(benchmark.grade(case, answer, evidence), grading_timeout, run_id)
+                    await _bounded(partial(benchmark.grade, case, answer, evidence), grading_timeout, run_id)
                 )
                 if description.get("protocol") is not None and grade.protocol != description["protocol"]:
                     raise ValueError("Grader protocol differs from its declared contract.")
@@ -528,6 +552,12 @@ async def evaluate(
                 result.explanation = grade.explanation
                 result.metadata["protocol"] = grade.protocol
                 result.status = "scored"
+        except _EvaluationStopped as stopped:
+            result.status, result.error = "unscored", "Evaluation stopped; partial results kept."
+            result.duration_seconds = time.monotonic() - started
+            report.results.append(_save_case(case, invocation, result, evidence, grade, content_policy, workspace_id))
+            report.status = stopped.status
+            return _finish(report)
         except asyncio.CancelledError:
             result.status, result.error = "cancelled", "Evaluation cancelled."
             result.duration_seconds = time.monotonic() - started
