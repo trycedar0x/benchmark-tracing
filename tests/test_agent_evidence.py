@@ -119,8 +119,9 @@ def test_noncomplete_evidence_must_not_be_graded_as_full_trace(state):
     e.state = state
     with pytest.raises(TraceAccessError):
         format_evidence(e)
-    with pytest.raises(GradingError):
+    with pytest.raises(GradingError) as caught:
         asyncio.run(evaluate_evidence("answer", e, REFERENCE, judge_models=["mock/judge"]))
+    assert caught.value.stage == "evidence"
 
 
 def test_metadata_or_hidden_reasoning_only_is_not_visible_trace():
@@ -233,20 +234,23 @@ def test_neutral_grading_uses_identical_weighting_and_verdict_validation_without
     ],
 )
 def test_neutral_grading_rejects_the_same_invalid_judge_verdicts(monkeypatch, verdict):
-    async def fake(*args):
+    async def fake(*args, **kwargs):
         return verdict
 
     monkeypatch.setattr(judging, "ask_json", fake)
-    with pytest.raises(GradingError):
+    monkeypatch.setattr(judging, "repair_json", fake)
+    with pytest.raises(GradingError) as caught:
         asyncio.run(
             evaluate_evidence("answer", get_callback(callback_evidence()), REFERENCE, judge_models=["mock/judge"])
         )
+    assert caught.value.stage == "json_schema" and caught.value.repair_attempted is True
 
 
 @pytest.mark.parametrize("models", [[], [""], ["mock/judge", "mock/judge"]])
 def test_neutral_grading_requires_explicit_distinct_judges(models):
-    with pytest.raises(GradingError):
+    with pytest.raises(GradingError) as caught:
         asyncio.run(evaluate_evidence("answer", get_callback(callback_evidence()), REFERENCE, judge_models=models))
+    assert caught.value.stage == "configuration"
 
 
 @pytest.mark.parametrize("value", ['{"profit":4,"units":"million"}', {"profit": 4}, [4, 5]])
@@ -338,8 +342,9 @@ def test_producer_withheld_marker_rejects_direct_grading_even_with_retained_inpu
     monkeypatch.setattr(judging, "ask_json", never)
     with pytest.raises(TraceAccessError, match="withheld"):
         format_evidence(e)
-    with pytest.raises(GradingError):
+    with pytest.raises(GradingError) as caught:
         asyncio.run(evaluate_evidence("answer", e, REFERENCE, judge_models=["mock/judge"]))
+    assert caught.value.stage == "evidence"
 
 
 @pytest.mark.parametrize("key", ["gen_ai.output.messages", "output.value", "everybench.content.output"])

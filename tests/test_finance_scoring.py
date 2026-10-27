@@ -109,15 +109,18 @@ def test_bigfinance_judge_receives_real_trace_and_weights_are_applied_by_code(mo
 
 
 def test_bigfinance_missing_trace_or_rubric_verdict_fails_loudly(monkeypatch):
-    with pytest.raises(GradingError, match="trace"):
+    with pytest.raises(GradingError, match="trace") as caught:
         asyncio.run(evaluate_trace("4 million", [], REFERENCE, judge_models=["mock/judge"]))
+    assert caught.value.stage == "evidence"
 
-    async def fake(*args):
+    async def fake(*args, **kwargs):
         return {"final_answer_correct": True, "rubric": []}
 
     monkeypatch.setattr(judging, "ask_json", fake)
-    with pytest.raises(GradingError, match="every rubric"):
+    monkeypatch.setattr(judging, "repair_json", fake)
+    with pytest.raises(GradingError, match="every rubric") as caught:
         asyncio.run(evaluate_trace("4 million", messages(), REFERENCE, judge_models=["mock/judge"]))
+    assert caught.value.stage == "json_schema" and caught.value.repair_attempted is True
 
 
 def test_trace_grading_does_not_use_the_8k_ui_preview_limit():

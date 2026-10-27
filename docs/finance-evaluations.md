@@ -116,7 +116,7 @@ Catalog entries may set `scoring.scorer`, `scoring.key`, `scoring.minimum`, `sco
 
 Unsupported structured values, unknown score strings, non-finite values, missing selected fields and out-of-range values become an explicit `unscored` sample with a diagnostic, never a silent valid zero. Valid scores are normalized to 0–1 before the existing UI/paired comparison sees them. All scorer evidence remains available in policy-filtered artifacts; raw structured values are withheld under metadata-only storage.
 
-Evaluator infrastructure/format errors fail explicitly. A genuinely wrong answer is a valid zero, while non-applicable component metrics stay non-applicable.
+Evaluator infrastructure/format errors fail explicitly. A genuinely wrong answer is a valid zero, while non-applicable component metrics stay non-applicable. A BigFinance format failure keeps a null score and a bounded `grading_diagnostic` (`provider`, `timeout`, `json_parse`, `json_schema`, or `evidence`). Invalid JSON or a schema-invalid rubric verdict gets one same-judge repair that carries only the invalid output and the JSON schema. Provider errors are not repaired. A successful repair is still the current single-judge or multi-judge adaptation, not official parity. Any redacted judge excerpt stays in the evaluator-only grading-diagnostic artifact and is never written into the agent trace.
 
 ## Validation and release gate
 

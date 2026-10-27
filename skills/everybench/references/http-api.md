@@ -25,6 +25,7 @@ Read the running server's `/openapi.json` for its installed contract; interactiv
 | `GET /api/runs/RUN_ID` | Run detail, target/model identity, manifest, status, scores/errors and outcome counts |
 | `GET /api/runs/RUN_ID/samples?offset=0&limit=100` | `{"total": N, "items": [...]}`; page to total, limit at most 1000 |
 | `GET /api/runs/RUN_ID/sample-evidence?sample_id=ORIGINAL_ID&epoch=1` | Policy-filtered sample artifact when available; original references remain evaluator-only |
+| `GET /api/runs/RUN_ID/grading-diagnostic?sample_id=ORIGINAL_ID&epoch=1` | Evaluator-only grading excerpt after a format failure; `agent_evidence` is false and the body is not a trace |
 | `POST /api/runs/RUN_ID/cancel` | Request cooperative cancellation |
 | `GET /api/compare?a=BASELINE_ID&b=CANDIDATE_ID` | Paired comparison; inspect compatibility/results even on HTTP 200 |
 

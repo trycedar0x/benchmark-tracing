@@ -35,7 +35,7 @@ def numeric_match(reference: Any, candidate: Any, tolerance: float = 0.01) -> fl
         raise ValueError("Tolerance must be non-negative and finite.")
     expected, actual = finite_number(reference), finite_number(candidate)
     if expected is None:
-        raise GradingError("Invalid numeric reference.")
+        raise GradingError("Invalid numeric reference.", stage="evidence")
     if actual is None:
         return 0.0
     error = abs(actual - expected)
@@ -49,9 +49,9 @@ def csv_match(reference: str, candidate: str | None, tolerance: float = 0.01) ->
         expected = list(expected_reader)
         headers = expected_reader.fieldnames or []
     except csv.Error as ex:
-        raise GradingError("Invalid reference table.") from ex
+        raise GradingError("Invalid reference table.", stage="evidence") from ex
     if not expected or not headers:
-        raise GradingError("Reference table is empty.")
+        raise GradingError("Reference table is empty.", stage="evidence")
     indexes = [key for key in ("year", "corporate", "date") if key in headers]
     try:
         actual_rows = list(csv.DictReader(io.StringIO(candidate or "")))
@@ -106,9 +106,15 @@ async def evaluate_response(
             },
         },
     )
-    for field in ("answer", "formula", "data", "data_indicator"):
+    invalid_extractor = {
+        "answer": "Extractor returned an invalid answer field.",
+        "formula": "Extractor returned an invalid formula field.",
+        "data": "Extractor returned an invalid data field.",
+        "data_indicator": "Extractor returned an invalid data_indicator field.",
+    }
+    for field, message in invalid_extractor.items():
         if field not in extracted or (extracted[field] is not None and not isinstance(extracted[field], str)):
-            raise GradingError(f"Extractor returned an invalid {field} field.")
+            raise GradingError(message, stage="json_schema")
     answer = numeric_match(reference["answer"], extracted["answer"], tolerance)
     formula, formula_reason = 0.0, "No formula was submitted."
     if extracted["formula"]:
@@ -123,9 +129,9 @@ async def evaluate_response(
         )
         mark = verdict.get("score")
         if isinstance(mark, bool) or not isinstance(mark, int) or mark not in (0, 1, 2):
-            raise GradingError("Formula judge score must be 0, 1 or 2.")
+            raise GradingError("Formula judge score must be 0, 1 or 2.", stage="json_schema")
         if not isinstance(verdict.get("reason"), str):
-            raise GradingError("Formula judge must explain its verdict.")
+            raise GradingError("Formula judge must explain its verdict.", stage="json_schema")
         formula, formula_reason = mark / 2, verdict["reason"]
     return {
         "protocol": PROTOCOL,

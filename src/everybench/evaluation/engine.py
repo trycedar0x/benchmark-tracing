@@ -19,10 +19,11 @@ from typing import Any
 from opentelemetry import context as otel_context
 from sqlalchemy import func, select
 
-from everybench.artifacts import write_sample_artifact
+from everybench.artifacts import write_grading_diagnostic, write_sample_artifact
 from everybench.config import settings
 from everybench.db import Run, SampleResult, Span, Trace, new_id, now, session_scope
 from everybench.evaluation.agents import CallableAgent
+from everybench.evaluation.diagnostics import bounded_diagnostic
 from everybench.evaluation.traces import _validate_evidence
 from everybench.evaluation.types import (
     AgentCallable,
@@ -298,6 +299,40 @@ def _save_case(
     return stored
 
 
+def _grading_error_text(diagnostic: dict[str, Any]) -> str:
+    if diagnostic["stage"] == "unspecified":
+        return diagnostic["message"]
+    return f"{diagnostic['stage']}: {diagnostic['message']}"
+
+
+def _apply_grading_failure(
+    result: CaseResult,
+    exc: BaseException,
+    run_id: str,
+    sample_id: str,
+    policy: str,
+) -> None:
+    """Persist a bounded diagnostic. A grading failure stays unscored."""
+    diagnostic = bounded_diagnostic(exc)
+    result.status = "grading_error"
+    result.score = None
+    result.components = {}
+    result.error = _grading_error_text(diagnostic)
+    result.metadata["grading_diagnostic"] = {
+        "stage": diagnostic["stage"],
+        "exception": diagnostic["exception"],
+        "message": diagnostic["message"],
+        "repair_attempted": diagnostic["repair_attempted"],
+    }
+    excerpt = getattr(exc, "invalid_output", None)
+    if diagnostic["stage"] in {"json_parse", "json_schema"} and isinstance(excerpt, str) and excerpt:
+        try:
+            write_grading_diagnostic(run_id, sample_id, 1, diagnostic, excerpt, policy)
+        except Exception:
+            # The case result already carries the bounded diagnostic. An excerpt write must not drop it.
+            pass
+
+
 def _finish(report: EvaluationReport) -> EvaluationReport:
     scores = [result.score for result in report.results if result.score is not None]
     report.metrics = {
@@ -481,6 +516,8 @@ async def evaluate(
                 result.score, result.components = score, components
                 result.explanation = grade.explanation
                 result.metadata["protocol"] = grade.protocol
+                if grade.metadata.get("format_repair") is True:
+                    result.metadata["format_repair"] = True
                 result.status = "scored"
         except asyncio.CancelledError:
             result.status, result.error = "cancelled", "Evaluation cancelled."
@@ -489,12 +526,16 @@ async def evaluate(
             report.status = "cancelled"
             _finish(report)
             raise
-        except TimeoutError:
-            result.status = "grading_error" if phase == "grading" else "timeout"
-            result.error = "Grading timed out." if phase == "grading" else "Agent invocation timed out."
-        except Exception:
-            result.status = "grading_error" if phase == "grading" else "agent_error"
-            result.error = "Grading failed." if phase == "grading" else "Agent invocation failed."
+        except TimeoutError as exc:
+            if phase == "grading":
+                _apply_grading_failure(result, exc, run_id, case.id, content_policy)
+            else:
+                result.status, result.error = "timeout", "Agent invocation timed out."
+        except Exception as exc:
+            if phase == "grading":
+                _apply_grading_failure(result, exc, run_id, case.id, content_policy)
+            else:
+                result.status, result.error = "agent_error", "Agent invocation failed."
         finally:
             otel_context.detach(token)
         result.duration_seconds = time.monotonic() - started

@@ -481,6 +481,23 @@ def create_app(workers: int = 0) -> FastAPI:
         except FileNotFoundError as ex:
             raise HTTPException(404, "Sample evidence not found") from ex
 
+    @app.get("/api/runs/{run_id}/grading-diagnostic")
+    def grading_diagnostic(
+        run_id: str,
+        sample_id: str,
+        epoch: int = Query(default=1, ge=1),
+        ws: WorkspaceContext = Depends(current_workspace),
+    ) -> dict[str, Any]:
+        """Evaluator-only format excerpt. This is not agent evidence and is not part of the trace."""
+        from everybench.artifacts import read_grading_diagnostic
+
+        with session_scope() as session:
+            _get_run(session, run_id, ws)
+        try:
+            return read_grading_diagnostic(run_id, sample_id, epoch)
+        except FileNotFoundError as ex:
+            raise HTTPException(404, "Grading diagnostic not found") from ex
+
     @app.post("/api/runs/{run_id}/cancel")
     def cancel_run(run_id: str, ws: WorkspaceContext = Depends(current_workspace)) -> dict[str, Any]:
         with session_scope() as session:
