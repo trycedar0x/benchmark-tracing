@@ -63,54 +63,36 @@ export type Sample = {
 
 export type CatalogEntry = {
   ref: string
-  id: string
-  version: number
+  name: string
   family: string
-  variant: string
-  task: string
   grader: string
-  task_count: number | null
+  task_count: number
+  requires_trace: boolean
+  experimental: boolean
   license: string | null
-  dataset: string | null
-  requires: string[]
-  sandbox: string | null
-  offline: boolean
   description: string | null
-  notes: string | null
-  variant_key: string
 }
 
-export type ModelPrice = {
-  model: string
-  mock: boolean
-  price: { input: number; output: number; as_of: string | null; source: string | null }
-}
-
-export type ModelEstimate = {
-  samples_measured: number
-  sample_errors?: number
-  input_tokens?: number
-  output_tokens?: number
-  cost_usd?: number
-  cost_usd_range?: [number, number]
-  note?: string
-  sample_run_id?: string
-  sample_status?: string
-}
-
-export type Quote = {
+export type EvaluationTarget = {
   id: string
-  created_at: string
+  name: string
+  version: string
+  origin: string
+  has_trace_source: boolean
+}
+
+export type EvaluationSubmission = {
   benchmark: string
-  models: string[]
-  limit: number | null
-  sample_size: number
-  samples_planned: number | null
-  estimate: Record<string, ModelEstimate>
-  cap_usd: number | null
-  status: string
-  approved_at: string | null
-  approved_by: string | null
+  target_id: string
+  judge_models: string[]
+  extractor_model?: string
+  sample_ids?: string[]
+  limit?: number
+  timeout?: number
+  trace_timeout?: number
+  grading_timeout?: number
+  content_policy: 'metadata' | 'redacted' | 'full'
+  allow_paid: true
 }
 
 export type Span = {
@@ -285,9 +267,10 @@ export class ApiError extends Error {
 
 let workspaceId: string | null = null
 try {
-  workspaceId = localStorage.getItem('everybench.workspace')
-    ?? localStorage.getItem('everyeval.workspace')
-    ?? localStorage.getItem('benchtrace.workspace')
+  workspaceId =
+    localStorage.getItem('everybench.workspace') ??
+    localStorage.getItem('everyeval.workspace') ??
+    localStorage.getItem('benchtrace.workspace')
 } catch {
   /* storage unavailable */
 }
@@ -326,19 +309,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   catalog: () => request<CatalogEntry[]>('/api/catalog'),
-  models: () => request<ModelPrice[]>('/api/models'),
+  evaluationTargets: () => request<EvaluationTarget[]>('/api/evaluation-targets'),
   runs: (params: Record<string, string> = {}) => request<Run[]>(`/api/runs?${new URLSearchParams(params)}`),
   run: (id: string) => request<Run>(`/api/runs/${id}`),
   samples: (id: string, params: Record<string, string>) =>
     request<{ total: number; items: Sample[] }>(`/api/runs/${id}/samples?${new URLSearchParams(params)}`),
-  startRuns: (body: Record<string, unknown>) =>
-    request<Run[]>('/api/runs', { method: 'POST', body: JSON.stringify(body) }),
+  startEvaluation: (body: EvaluationSubmission) =>
+    request<Run>('/api/runs', { method: 'POST', body: JSON.stringify(body) }),
   cancel: (id: string) => request<Run>(`/api/runs/${id}/cancel`, { method: 'POST' }),
-  createQuote: (body: Record<string, unknown>) =>
-    request<Quote>('/api/quotes', { method: 'POST', body: JSON.stringify(body) }),
-  quote: (id: string) => request<Quote>(`/api/quotes/${id}`),
-  approveQuote: (id: string, cap_usd: number | null) =>
-    request<Quote>(`/api/quotes/${id}/approve`, { method: 'POST', body: JSON.stringify({ cap_usd }) }),
   compare: (a: string, b: string, force = false) =>
     request<Comparison>(`/api/compare?${new URLSearchParams({ a, b, force: String(force) })}`),
   trace: (id: string) => request<TraceDetail>(`/api/traces/${id}`),
